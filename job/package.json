@@ -1,0 +1,9 @@
+{
+  "name": "farde-price-job",
+  "private": true,
+  "type": "module",
+  "description": "Tâche quotidienne de mise à jour des cotes Farde",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node update-prices.mjs" },
+  "dependencies": { "@supabase/supabase-js": "2.117.2" }
+}

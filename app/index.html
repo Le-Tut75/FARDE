@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Farde</title>
+<meta name="description" content="Collection et portefeuille de cartes Pokémon : cotes Cardmarket quotidiennes, scellés, fardes, import de tableur.">
+<meta name="theme-color" content="#131C30">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="boot" class="boot"><span class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+
+<!-- Connexion -->
+<section id="auth" class="auth" hidden>
+  <form id="authForm" class="auth-card">
+    <div class="brand-lg"><span class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><h1>Farde</h1></div>
+    <p class="muted">Ta collection Pokémon, cotée chaque matin sur Cardmarket.</p>
+    <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="email" required></div>
+    <div class="field"><label for="authPass">Mot de passe</label><input id="authPass" type="password" autocomplete="current-password" minlength="8" required></div>
+    <p class="loss" id="authErr" role="alert"></p>
+    <button class="btn pri" type="submit" id="authSubmit">Se connecter</button>
+    <button class="btn ghost" type="button" id="authToggle">Créer un compte</button>
+  </form>
+</section>
+
+<!-- Application -->
+<div id="app" hidden>
+  <header class="bar">
+    <div class="bar-in">
+      <div class="brand">
+        <a href="#portefeuille" class="brand-link"><span class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="brand-name">Farde</span></a>
+        <div class="tot"><div class="num" id="hdrValue">—</div><div id="hdrPL" class="tot-pl"></div></div>
+      </div>
+      <nav id="nav" aria-label="Sections">
+        <a href="#portefeuille">Portefeuille</a>
+        <a href="#catalogue">Catalogue</a>
+        <a href="#collection">Collection</a>
+        <a href="#import">Import</a>
+        <a href="#fardes">Fardes</a>
+        <a href="#series">Séries</a>
+        <a href="#scelles">Scellés</a>
+        <a href="#wishlist">Wishlist</a>
+        <a href="#reglages">Réglages</a>
+      </nav>
+    </div>
+  </header>
+  <div id="offline" class="banner" hidden></div>
+  <main id="view"></main>
+</div>
+
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast" role="status" hidden></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
