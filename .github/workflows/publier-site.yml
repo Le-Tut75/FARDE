@@ -1,0 +1,43 @@
+name: Publier le site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vérifier la configuration
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Ajoute les variables SUPABASE_URL et SUPABASE_ANON_KEY (Settings > Secrets and variables > Actions > Variables), puis relance."
+            exit 1
+          fi
+          printf "export const SUPABASE_URL = '%s';\nexport const SUPABASE_ANON_KEY = '%s';\n" "$(echo $SUPABASE_URL | tr -d '[:space:]')" "$(echo $SUPABASE_ANON_KEY | tr -d '[:space:]')" > app/js/config.js
+          sed -i "s/__VERSION__/${GITHUB_SHA::8}/" app/sw.js
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app
+      - id: deploiement
+        uses: actions/deploy-pages@v4
