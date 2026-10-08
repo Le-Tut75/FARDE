@@ -176,6 +176,7 @@ function drawMap() {
     <div class="mapgrid">
       <div class="field"><label for="dLang">Langue si non précisée</label><select id="dLang">${langOptions(st.defaults.lang)}</select></div>
       <div class="field"><label for="dCond">État si non précisé</label><select id="dCond">${CONDITIONS.map(([k, n]) => `<option value="${k}" ${k === st.defaults.condition ? 'selected' : ''}>${k} · ${n}</option>`).join('')}</select></div>
+      <div class="field"><label for="dExp">Vient d’une ouverture ou d’un lot</label><select id="dExp"><option value="">Non</option>${S.expenses.map((e) => `<option value="${e.id}" ${e.id === st.defaults.expense ? 'selected' : ''}>${esc(e.label)}</option>`).join('')}</select></div>
       <div class="field"><label for="dBind">Ranger dans la farde</label><select id="dBind"><option value="">Aucune</option>${S.binders.map((b) => `<option value="${b.id}" ${b.id === st.defaults.binder ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
     </div>
     <label class="row small" style="gap:6px"><input type="checkbox" id="dMerge" ${st.merge ? 'checked' : ''}> Si la carte est déjà dans ma collection (même langue, variante, état), additionner les quantités au lieu de créer une nouvelle ligne</label>
@@ -188,7 +189,7 @@ function drawMap() {
   $('#mBack', root).onclick = () => { st = { ...fresh(), defaults: st.defaults }; draw(); };
   $('#mGo', root).onclick = () => {
     if (st.map.name == null && st.map.number == null && st.map.card_id == null) { $('#mErr', root).textContent = 'Indique au moins la colonne du nom ou du numéro de la carte.'; return; }
-    st.defaults = { lang: $('#dLang', root).value, condition: $('#dCond', root).value, binder: $('#dBind', root).value };
+    st.defaults = { lang: $('#dLang', root).value, condition: $('#dCond', root).value, binder: $('#dBind', root).value, expense: $('#dExp', root).value || null };
     st.merge = $('#dMerge', root).checked;
     runMatch();
   };
@@ -335,7 +336,7 @@ async function doImport() {
       lang: sp.lang, card_id: c.id, name: c.name, local_id: c.localId ?? null, set_id: c.setId ?? null, set_name: c.setName ?? null,
       set_total: c.setTotal ?? null, image: c.image ?? null, rarity: null, variant, condition: sp.condition, qty: sp.qty,
       buy_price: sp.buyPrice, buy_date: sp.buyDate, binder_id: st.defaults.binder || null,
-      grading_company: sp.grading?.company ?? null, grade: sp.grading?.grade ?? null, manual_price: sp.manualPrice, notes: sp.notes, source: 'import',
+      grading_company: sp.grading?.company ?? null, grade: sp.grading?.grade ?? null, manual_price: sp.manualPrice, notes: sp.notes, source: 'import', expense_id: st.defaults.expense || null,
     };
     if (st.merge && !line.grading_company) {
       const ex = S.cards.find((l) => l.lang === line.lang && l.card_id === line.card_id && l.variant === line.variant && l.condition === line.condition && !l.grading_company);

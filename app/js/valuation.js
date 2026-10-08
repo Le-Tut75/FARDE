@@ -126,7 +126,7 @@ export const cardKey = (lang, cardId) => `${lang}:${cardId}`;
  * Totaux du portefeuille.
  * priceMap : Map("lang:card_id" -> ligne card_prices ou objet cm), sealedMap : Map(cm_id -> ligne cm_sealed)
  */
-export function portfolio(cards, sealed, priceMap, sealedMap, settings = DEFAULT_SETTINGS) {
+export function portfolio(cards, sealed, priceMap, sealedMap, settings = DEFAULT_SETTINGS, expenses = [], sales = []) {
   let cardsValue = 0, cardsInvested = 0, count = 0, unpriced = 0;
   for (const l of cards) {
     const c = lineCalc(l, priceMap.get(cardKey(l.lang, l.card_id)), settings);
@@ -138,11 +138,25 @@ export function portfolio(cards, sealed, priceMap, sealedMap, settings = DEFAULT
     const c = sealedCalc(s, s.cm_id != null ? sealedMap.get(Number(s.cm_id)) : null);
     sealedValue += c.value || 0; sealedInvested += c.invested;
   }
-  const value = round2(cardsValue + sealedValue), invested = round2(cardsInvested + sealedInvested);
+  const spent = expenses.reduce((a, e) => a + Number(e.amount || 0), 0);
+  let realized = 0, soldCost = 0, salesNet = 0;
+  for (const s of sales) { const c = saleCalc(s); realized += c.pl; soldCost += c.cost; salesNet += c.net; }
+  const value = round2(cardsValue + sealedValue), invested = round2(cardsInvested + sealedInvested + spent);
+  // Plus-value totale = latente (ce que tu as encore) + réalisée (ce que tu as vendu)
+  const pl = round2(value - invested + realized), base = invested + soldCost;
   return {
-    value, invested, pl: round2(value - invested), pct: invested ? ((value - invested) / invested) * 100 : null,
+    spent: round2(spent), value, invested, pl, pct: base ? (pl / base) * 100 : null,
+    latent: round2(value - invested), realized: round2(realized), salesNet: round2(salesNet), salesCount: sales.length,
     cardsValue: round2(cardsValue), sealedValue: round2(sealedValue), count, unpriced,
   };
+}
+
+/** Bilan d'une vente : net encaissé (prix × quantité − frais) moins le prix d'achat des exemplaires vendus. */
+export function saleCalc(s) {
+  const gross = Number(s.price || 0) * (s.qty || 1);
+  const net = round2(gross - Number(s.fees || 0));
+  const cost = round2(Number(s.cost || 0));
+  return { gross: round2(gross), net, cost, pl: round2(net - cost) };
 }
 
 export function round2(v) { return Math.round(v * 100) / 100; }
@@ -150,4 +164,22 @@ export function round2(v) { return Math.round(v * 100) / 100; }
 /** Date du jour à Paris, format AAAA-MM-JJ. */
 export function parisDay(d = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(d);
+}
+
+/** Bilan d'une dépense (ouverture…) : ce qu'elle a coûté contre la valeur des cartes qui y sont rattachées. */
+export function expenseCalc(expense, lines, priceMap, settings = DEFAULT_SETTINGS, sales = []) {
+  let value = 0, count = 0, extra = 0, sold = 0;
+  for (const l of lines) {
+    if (l.expense_id !== expense.id) continue;
+    const c = lineCalc(l, priceMap.get(cardKey(l.lang, l.card_id)), settings);
+    value += c.value || 0; extra += c.invested; count += l.qty || 1;
+  }
+  // Cartes de l'ouverture déjà vendues : on compte ce qu'elles ont rapporté
+  for (const s of sales) {
+    if (s.expense_id !== expense.id) continue;
+    const c = saleCalc(s);
+    value += c.net; extra += c.cost; count += s.qty || 1; sold += s.qty || 1;
+  }
+  const cost = Number(expense.amount || 0) + extra;
+  return { value: round2(value), cost: round2(cost), count, sold, result: round2(value - cost), pct: cost ? ((value - cost) / cost) * 100 : null };
 }

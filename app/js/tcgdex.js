@@ -135,3 +135,53 @@ export function searchByName(lang, name) {
     return (r || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null }));
   }, false);
 }
+
+export const LANG_ORDER = ['fr', 'en', 'de', 'it', 'es', 'ja'];
+
+/**
+ * Séries regroupées par bloc (Méga-Évolution, Écarlate et Violet…), le plus récent d'abord.
+ * Résultat : [{ id, name, sets: [{ id, name, cardCount }] }]
+ */
+export const getSeriesGroups = (lang) => cached(`blocs.${lang}`, 3 * DAY, async () => {
+  const [series, allSets] = await Promise.all([api(`/${lang}/series`), getSets(lang)]);
+  const groups = [];
+  const seen = new Set();
+  const details = await Promise.all((series || []).map((s) => api(`/${lang}/series/${encodeURIComponent(s.id)}`).catch(() => null)));
+  (series || []).forEach((s, i) => {
+    const sets = (details[i]?.sets || []).map((x) => ({ id: x.id, name: x.name, cardCount: x.cardCount || {} })).reverse();
+    sets.forEach((x) => seen.add(x.id));
+    if (sets.length) groups.push({ id: s.id, name: s.name, sets });
+  });
+  groups.reverse();
+  const rest = allSets.filter((x) => !seen.has(x.id)).reverse();
+  if (rest.length) groups.push({ id: '_autres', name: 'Autres séries', sets: rest });
+  return groups;
+}).then((g) => g || []);
+
+/** Blocs pour une langue, ou pour « toutes les langues » (blocs français, sinon anglais). */
+export async function groupsFor(lang) {
+  if (lang !== 'all') return getSeriesGroups(lang);
+  const fr = await getSeriesGroups('fr').catch(() => []);
+  return fr.length ? fr : getSeriesGroups('en');
+}
+
+/**
+ * Recherche dans une langue ou dans toutes (lang = 'all').
+ * Chaque résultat porte sa langue ; une même carte trouvée en plusieurs langues n'apparaît qu'une fois.
+ */
+export async function searchAny(lang, opts, preferred = 'fr') {
+  if (lang !== 'all') return (await searchCards(lang, opts)).map((c) => ({ ...c, lang }));
+  const order = [preferred, ...LANG_ORDER.filter((l) => l !== preferred)];
+  if (opts.setId) {
+    // Une série : on la prend dans la première langue où elle existe
+    for (const l of order) {
+      const r = await searchCards(l, opts).catch(() => null);
+      if (r && (r.length || !opts.q)) { const s = await getSet(l, opts.setId).catch(() => null); if (s) return r.map((c) => ({ ...c, lang: l })); }
+    }
+    return [];
+  }
+  const all = await Promise.all(order.map((l) => searchCards(l, opts).then((r) => r.map((c) => ({ ...c, lang: l }))).catch(() => [])));
+  const out = [], ids = new Set();
+  for (const list of all) for (const c of list) if (!ids.has(c.id)) { ids.add(c.id); out.push(c); }
+  return out;
+}

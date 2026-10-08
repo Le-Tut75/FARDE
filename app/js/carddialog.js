@@ -2,7 +2,8 @@
 import { S, addCard, updateCard, deleteCards, addWish, priceHistory, ownedQty, cmOf, priceOf, ensurePriceRow } from './store.js';
 import { getCard } from './tcgdex.js';
 import { CONDITIONS, VARIANTS, lineCalc, cardKey, variantLabel, isFirstEdition, resolveCm } from './valuation.js';
-import { esc, eur, usd, signEur, plClass, openDialog, closeDialog, toast, num, today, LANGS, cardImg, lineChart, confirmButton, $ } from './ui.js';
+import { esc, eur, usd, signEur, plClass, openDialog, closeDialog, toast, num, today, LANGS, langOptions, cardImg, lineChart, confirmButton, frDate, $ } from './ui.js';
+import { openSell } from './sell.js';
 
 const GRADERS = ['PSA', 'CGC', 'BGS', 'PCA', 'Collect Aura', 'SGC', 'Autre'];
 
@@ -71,18 +72,28 @@ export async function openCard(lang, cardId, opts = {}) {
       <div class="fgrid">
         <div class="field" style="grid-column:span 2"><label for="fVar">Version</label><select id="fVar">${variantOptions}</select>
           <input id="fVarOther" type="text" placeholder="Ex. tampon avant-première, erreur d’impression…" value="${esc(isOther ? L.variant.slice(6) : '')}" ${isOther ? '' : 'hidden'} style="margin-top:6px"></div>
+        <div class="field"><label for="fLang">Langue de ta carte</label><select id="fLang">${langOptions(L.lang || lang)}</select></div>
         <div class="field"><label for="fCond">État</label><select id="fCond">${CONDITIONS.map(([k, n]) => `<option value="${k}" ${k === L.condition ? 'selected' : ''}>${k} · ${n}</option>`).join('')}</select></div>
         <div class="field"><label for="fQty">Quantité</label><input id="fQty" type="number" min="1" max="9999" step="1" value="${L.qty}" required></div>
         <div class="field"><label for="fBuy">Prix d'achat unitaire (€)</label><input id="fBuy" type="number" min="0" step="0.01" inputmode="decimal" value="${L.buy_price ?? ''}" placeholder="0,00"></div>
-        <div class="field"><label for="fDate">Date d'achat</label><input id="fDate" type="date" value="${esc(L.buy_date || '')}"></div>
-        <div class="field"><label for="fBind">Farde</label><select id="fBind">${S.binders.map((b) => `<option value="${b.id}" ${b.id === L.binder_id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="" ${!L.binder_id ? 'selected' : ''}>Aucune</option></select></div>
-        <div class="field"><label for="fGc">Gradation</label><select id="fGc"><option value="">Aucune (raw)</option>${GRADERS.map((g) => `<option ${L.grading_company === g ? 'selected' : ''}>${g}</option>`).join('')}</select></div>
-        <div class="field"><label for="fGg">Note</label><input id="fGg" type="text" value="${esc(L.grade || '')}" placeholder="10"></div>
-        <div class="field"><label for="fMan">Cote manuelle u. (€)</label><input id="fMan" type="number" min="0" step="0.01" inputmode="decimal" value="${L.manual_price ?? ''}" placeholder="automatique"></div>
       </div>
-      <div class="field"><label for="fNotes">Notes</label><input id="fNotes" type="text" value="${esc(L.notes || '')}" placeholder="Acheté en convention, échange avec…"></div>
+      <details class="more" id="fMore" ${L.grading_company || L.manual_price != null || L.expense_id  || L.notes ? 'open' : ''}>
+        <summary>Plus d’options <span class="muted small">farde, gradation, cote manuelle, ouverture, notes</span></summary>
+        <div class="stack" style="margin-top:12px">
+        <div class="fgrid">
+          <div class="field"><label for="fBind">Farde</label><select id="fBind">${S.binders.map((b) => `<option value="${b.id}" ${b.id === L.binder_id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}<option value="" ${!L.binder_id ? 'selected' : ''}>Aucune</option></select></div>
+          <div class="field"><label for="fDate">Date d'achat</label><input id="fDate" type="date" value="${esc(L.buy_date || '')}"></div>
+          <div class="field"><label for="fMan">Cote manuelle u. (€)</label><input id="fMan" type="number" min="0" step="0.01" inputmode="decimal" value="${L.manual_price ?? ''}" placeholder="automatique"></div>
+          <div class="field"><label for="fGc">Gradation</label><select id="fGc"><option value="">Aucune (raw)</option>${GRADERS.map((g) => `<option ${L.grading_company === g ? 'selected' : ''}>${g}</option>`).join('')}</select></div>
+          <div class="field"><label for="fGg">Note</label><input id="fGg" type="text" value="${esc(L.grade || '')}" placeholder="10"></div>
+        </div>
+        <div class="field"><label for="fExp">Vient d’une ouverture ou d’un lot</label><select id="fExp"><option value="">Non</option>${S.expenses.map((e) => `<option value="${e.id}" ${e.id === L.expense_id ? 'selected' : ''}>${esc(e.label)} · ${frDate(e.d)} · ${eur(e.amount)}</option>`).join('')}</select>
+          ${S.expenses.length ? '' : '<span class="sub">Crée d’abord une dépense (Portefeuille › Dépenses) pour y rattacher tes cartes.</span>'}</div>
+        <div class="field"><label for="fNotes">Notes</label><input id="fNotes" type="text" value="${esc(L.notes || '')}" placeholder="Acheté en convention, échange avec…"></div>
+        </div>
+      </details>
       <div class="row between"><span class="note" id="fPrev"></span>
-        <div class="row">${line ? `<button type="button" class="btn dng" id="fDel">Supprimer</button>` : `<button type="button" class="btn" id="fWish">${inWish ? 'Dans la wishlist' : 'Ajouter à la wishlist'}</button>`}
+        <div class="row">${line ? `<button type="button" class="btn dng" id="fDel">Supprimer</button><button type="button" class="btn" id="fSell">Vendre</button>` : `<button type="button" class="btn" id="fWish">${inWish ? 'Dans la wishlist' : 'Ajouter à la wishlist'}</button>`}
         <button class="btn pri" type="submit" id="fSave">${line ? 'Enregistrer' : 'Ajouter'}</button></div></div>
     </form>
   </div></div></div>`);
@@ -93,6 +104,7 @@ export async function openCard(lang, cardId, opts = {}) {
     buy_price: num($('#fBuy', d).value), buy_date: $('#fDate', d).value || null, binder_id: $('#fBind', d).value || null,
     grading_company: $('#fGc', d).value || null, grade: $('#fGc', d).value ? ($('#fGg', d).value.trim() || null) : null,
     manual_price: num($('#fMan', d).value), notes: $('#fNotes', d).value.trim() || null,
+    expense_id: $('#fExp', d).value || null,
   });
   const prev = () => {
     const data = read();
@@ -103,6 +115,7 @@ export async function openCard(lang, cardId, opts = {}) {
       : r.source === 'brut' ? ' · <span class="warn">cote non gradée : saisis la cote de la gradée.</span>'
       : own ? ' · cote propre à cette version'
       : data.variant.includes(':') && !own ? ' · cote exacte de cette version dès la prochaine mise à jour du matin' : '';
+    if (r.toCheck && (r.source === 'brut' || isFirstEdition(data.variant) || r.value == null)) $('#fMore', d).open = true;
     $('#fPrev', d).innerHTML = r.value != null
       ? `Valeur ${eur(r.value)}${r.pl != null ? ` · P&amp;L <b class="${plClass(r.pl)}">${signEur(r.pl)}</b>` : ''}${hint}`
       : 'Pas de cote : saisis une cote manuelle.';
@@ -114,10 +127,18 @@ export async function openCard(lang, cardId, opts = {}) {
     const btn = $('#fSave', d); btn.disabled = true;
     try {
       const data = read();
-      if (line) { await updateCard(line.id, data); toast('Ligne mise à jour.'); }
+      // Langue de l'exemplaire : on reprend le nom et l'image dans cette langue
+      const chosen = $('#fLang', d).value;
+      let src = c;
+      if (chosen !== lang) {
+        src = await getCard(chosen, cardId).catch(() => null);
+        if (!src) { toast(`Cette carte n’existe pas en ${LANGS[chosen].toLowerCase()} dans le catalogue.`, 5000); btn.disabled = false; return; }
+      }
+      const ident = { lang: chosen, name: src.name, image: src.image || c.image || null, set_name: src.set?.name || c.set?.name || null };
+      if (line) { await updateCard(line.id, { ...data, ...(chosen !== line.lang ? ident : {}) }); toast('Ligne mise à jour.'); }
       else {
-        await addCard({ lang, card_id: cardId, name: c.name, local_id: c.localId, set_id: c.set?.id || null, set_name: c.set?.name || null,
-          set_total: c.set?.total ?? null, image: c.image || null, rarity: c.rarity || null, source: 'manuel', ...data });
+        await addCard({ card_id: cardId, local_id: c.localId, set_id: c.set?.id || null,
+          set_total: c.set?.total ?? null, rarity: c.rarity || null, source: 'manuel', ...ident, ...data });
         toast('Ajoutée à ta collection.');
       }
       closeDialog();
@@ -128,6 +149,8 @@ export async function openCard(lang, cardId, opts = {}) {
     if (!confirmButton(del, 'Confirmer la suppression')) return;
     try { await deleteCards([line.id]); closeDialog(); toast('Ligne supprimée.'); } catch (err) { toast(err.message, 5000); }
   };
+  const sb = $('#fSell', d);
+  if (sb) sb.onclick = () => openSell('card', line);
   const wb = $('#fWish', d);
   if (wb) wb.onclick = async () => {
     if (inWish) { closeDialog(); location.hash = '#wishlist'; return; }

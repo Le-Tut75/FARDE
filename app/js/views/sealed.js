@@ -1,6 +1,7 @@
 import { S, calcSealed, addSealed, updateSealed, deleteSealed, searchSealed, priceHistory, sealedCatalogSize } from '../store.js';
-import { getSets, getSetsNewestFirst } from '../tcgdex.js';
+import { getSets, getSetsNewestFirst, getSeriesGroups } from '../tcgdex.js';
 import { norm } from '../match.js';
+import { openSell } from '../sell.js';
 import { esc, eur, signEur, pct, plClass, langOptions, openDialog, closeDialog, toast, num, today, lineChart, confirmButton, setPicker, $ } from '../ui.js';
 
 let root;
@@ -86,7 +87,7 @@ export function render(el) {
   $('#sQ', root).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); st.q = e.target.value.trim(); browse(); } });
   $('#sType', root).onchange = (e) => { st.type = e.target.value; browse(); };
   $('#sOrder', root).onchange = (e) => { st.order = e.target.value; browse(); };
-  setPicker($('#sSet', root), () => getSetsNewestFirst('fr'), (s) => { st.set = s; browse(); });
+  setPicker($('#sSet', root), () => getSeriesGroups('fr'), (s) => { st.set = s; browse(); });
   $('#sRes', root).addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) editDialog(null, st.results[+b.dataset.k]); });
   sealedCatalogSize().then((n) => { const c = $('#sCount', root); if (c) c.textContent = n ? `${n.toLocaleString('fr-FR')} produits` : ''; if (!n) $('#sInfo', root).innerHTML = '<span class="warn">Le catalogue se remplit à la première mise à jour automatique (Réglages › Mise à jour des cotes). En attendant, utilise « Produit hors catalogue ».</span>'; }).catch(() => {});
   update();
@@ -138,6 +139,7 @@ export function update() {
     <td class="r num hide-sm">${eur(i)}</td><td class="hide-sm"></td><td class="r num">${eur(v)}</td><td class="r num ${plClass(v - i)}">${signEur(v - i)}</td></tr>`;
 }
 
+export const openSealed = (s, cmRow) => editDialog(s, cmRow);
 function editDialog(s, cmRow) {
   const isNew = !s;
   const x = s || { name: cmRow?.name || '', category: cmRow?.category || '', cm_id: cmRow?.id ?? null, lang: S.settings.default_lang || 'fr', qty: 1, buy_price: null, buy_date: today(), manual_price: null, notes: '', image_url: null };
@@ -165,7 +167,7 @@ function editDialog(s, cmRow) {
       </div>
       <div class="field"><label for="sImg">Ta propre photo (lien d’image, facultatif)</label><input id="sImg" type="url" value="${esc(x.image_url || '')}" placeholder="https://… .jpg — remplace la photo automatique"></div>
       <div class="field"><label for="sO">Notes</label><input id="sO" type="text" value="${esc(x.notes || '')}" placeholder="Acheté chez…"></div>
-      <div class="row between"><div>${isNew ? '' : '<button type="button" class="btn dng" id="sDel">Supprimer</button>'}</div><div class="row"><button type="button" class="btn" data-close>Annuler</button><button class="btn pri" id="sSave">${isNew ? 'Ajouter à ma collection' : 'Enregistrer'}</button></div></div>
+      <div class="row between"><div class="row">${isNew ? '' : '<button type="button" class="btn dng" id="sDel">Supprimer</button><button type="button" class="btn" id="sSell">Vendre</button>'}</div><div class="row"><button type="button" class="btn" data-close>Annuler</button><button class="btn pri" id="sSave">${isNew ? 'Ajouter à ma collection' : 'Enregistrer'}</button></div></div>
     </form>`);
   $('#sf', d).onsubmit = async (e) => {
     e.preventDefault();
@@ -179,6 +181,8 @@ function editDialog(s, cmRow) {
       closeDialog(); toast(isNew ? 'Scellé ajouté à ta collection.' : 'Scellé enregistré.');
     } catch (err) { toast(err.message, 5000); $('#sSave', d).disabled = false; }
   };
+  const sell = $('#sSell', d);
+  if (sell) sell.onclick = () => openSell('sealed', s);
   const del = $('#sDel', d);
   if (del) del.onclick = async () => { if (!confirmButton(del, 'Confirmer la suppression')) return; try { await deleteSealed(s.id); closeDialog(); toast('Scellé supprimé.'); } catch (err) { toast(err.message, 5000); } };
   if (auto && x.cm_id != null) priceHistory(`sealed:${x.cm_id}`).then((h) => {

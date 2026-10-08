@@ -7,6 +7,8 @@
 //   TELEGRAM_BOT_TOKEN                        (facultatif : alertes wishlist)
 import { createClient } from '@supabase/supabase-js';
 import { buildIndex, findImage } from './sealed-images.mjs';
+import { updateDeals } from './deals.mjs';
+import { updateMovers, wishDealAlerts } from './movers.mjs';
 import { cmPrice, portfolio, cardKey, parisDay, DEFAULT_SETTINGS, variantKey, resolveCm } from '../app/js/valuation.js';
 
 const TCGDEX = 'https://api.tcgdex.net/v2';
@@ -154,6 +156,7 @@ export async function run({ sb, fetchImpl = fetch, telegramToken = null, now = n
 
     // 2. Cartes suivies (collection + wishlist de tous les utilisateurs)
     const coll = await fetchAll(sb, 'collection', 'user_id,lang,card_id,name,local_id,set_name,image,variant,condition,qty,buy_price,manual_price,grading_company');
+    const sales = await fetchAll(sb, 'sales', 'user_id,qty,price,fees,cost').catch(() => []);
     const wish = await fetchAll(sb, 'wishlist', 'id,user_id,lang,card_id,name,variant,target_price,last_alert_at');
     const tracked = [...new Map([...coll, ...wish].map((r) => [cardKey(r.lang, r.card_id), r])).values()];
     summary.cards = tracked.length;
@@ -215,15 +218,31 @@ export async function run({ sb, fetchImpl = fetch, telegramToken = null, now = n
     // 4. Portefeuille de chaque utilisateur
     const priceMap = new Map((await fetchAll(sb, 'card_prices', 'lang,card_id,cm,variants')).map((r) => [cardKey(r.lang, r.card_id), r]));
     const settingsMap = new Map((await fetchAll(sb, 'user_settings')).map((s) => [s.user_id, { ...DEFAULT_SETTINGS, ...s, cond: { ...DEFAULT_SETTINGS.cond, ...(s.cond || {}) } }]));
-    const users = new Set([...coll.map((c) => c.user_id), ...sealed.map((s) => s.user_id)]);
+    const expenses = await fetchAll(sb, 'expenses', 'user_id,amount').catch(() => []);
+    const users = new Set([...coll.map((c) => c.user_id), ...sealed.map((s) => s.user_id), ...expenses.map((e) => e.user_id), ...sales.map((s) => s.user_id)]);
     const snaps = [];
     for (const u of users) {
       const st = settingsMap.get(u) || DEFAULT_SETTINGS;
-      const p = portfolio(coll.filter((c) => c.user_id === u), sealed.filter((s) => s.user_id === u), priceMap, sealedMap, st);
-      snaps.push({ user_id: u, d, value: p.value, invested: p.invested, cards_value: p.cardsValue, sealed_value: p.sealedValue });
+      const mine = sales.filter((s) => s.user_id === u);
+      const p = portfolio(coll.filter((c) => c.user_id === u), sealed.filter((s) => s.user_id === u), priceMap, sealedMap, st, expenses.filter((e) => e.user_id === u), mine);
+      const snap = { user_id: u, d, value: p.value, invested: p.invested, cards_value: p.cardsValue, sealed_value: p.sealedValue };
+      if (mine.length) snap.realized = p.realized;
+      snaps.push(snap);
     }
     await upsertChunks(sb, 'portfolio_history', snaps, 'user_id,d');
     summary.users = snaps.length;
+
+    // 4 bis. Opportunités (indépendant : une erreur ici n'empêche pas le reste)
+    if (guide.size) {
+      try { Object.assign(summary, await updateDeals({ sb, fetchJson, fetchAll, guide, fetchImpl, now, log })); }
+      catch (e) { summary.warnings.push(`Opportunités non mises à jour : ${e.message}`); log(summary.warnings.at(-1)); }
+    }
+
+    // 4 ter. Variations de cote de chaque collection (+ alertes), puis opportunités de la wishlist
+    try { Object.assign(summary, await updateMovers({ sb, coll, priceMap, d, now, settingsMap, telegramToken, fetchImpl, log })); }
+    catch (e) { summary.warnings.push(`Variations non calculées : ${e.message}`); log(summary.warnings.at(-1)); }
+    try { Object.assign(summary, await wishDealAlerts({ sb, settingsMap, telegramToken, fetchImpl, now })); }
+    catch (e) { summary.warnings.push(`Alertes opportunités : ${e.message}`); log(summary.warnings.at(-1)); }
 
     // 5. Alertes wishlist (Telegram, facultatif)
     if (telegramToken) {

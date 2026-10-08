@@ -28,6 +28,9 @@
   <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.2"/><path d="M14 17l2 2 4-4"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10Z"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></symbol>
+ <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><path d="M4 7.5V17a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H6.5A2.5 2.5 0 0 1 4 7.5Z"/><circle cx="16" cy="13.5" r="1.2"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3.5 7.5 9 13l3.5-3.5 8 8"/><path d="M14.5 17.5h6v-6"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></symbol>
   <symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/></symbol>
 </svg>
 
@@ -50,16 +53,16 @@
 <div id="app" class="shell" hidden>
   <aside class="side" aria-label="Navigation">
     <a href="#portefeuille" class="brand-link"><span class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="brand-name">Farde</span></a>
+    <button type="button" class="gsearch" data-gsearch><svg><use href="#i-search"/></svg><span>Rechercher</span><kbd>/</kbd></button>
     <nav id="nav" class="side-nav">
       <a href="#portefeuille" data-route="portefeuille"><svg><use href="#i-home"/></svg>Portefeuille</a>
       <a href="#collection" data-route="collection"><svg><use href="#i-cards"/></svg>Collection</a>
       <a href="#catalogue" data-route="catalogue"><svg><use href="#i-search"/></svg>Catalogue</a>
       <a href="#scelles" data-route="scelles"><svg><use href="#i-box"/></svg>Scellés</a>
+      <a href="#opportunites" data-route="opportunites"><svg><use href="#i-trend"/></svg>Opportunités</a>
       <a href="#wishlist" data-route="wishlist"><svg><use href="#i-heart"/></svg>Wishlist</a>
       <span class="side-sep"></span>
-      <a href="#fardes" data-route="fardes"><svg><use href="#i-binder"/></svg>Fardes</a>
-      <a href="#series" data-route="series"><svg><use href="#i-grid"/></svg>Séries</a>
-      <a href="#import" data-route="import"><svg><use href="#i-upload"/></svg>Import</a>
+      <a href="#ajout?mode=scan" data-route="ajout"><svg><use href="#i-scan"/></svg>Scanner / ajout rapide</a>
       <a href="#reglages" data-route="reglages"><svg><use href="#i-gear"/></svg>Réglages</a>
     </nav>
     <div class="side-total"><span class="muted small">Valeur totale</span><b id="hdrValue">—</b><span id="hdrPL" class="small"></span></div>
@@ -67,12 +70,13 @@
 
   <header class="topbar">
     <a href="#portefeuille" class="brand-link"><span class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="brand-name">Farde</span></a>
-    <div class="top-total"><b id="hdrValueM">—</b><span id="hdrPLM" class="small"></span></div>
+    <div class="row" style="gap:12px;flex-wrap:nowrap"><button type="button" class="iconbtn" data-gsearch aria-label="Rechercher"><svg><use href="#i-search"/></svg></button>
+    <div class="top-total"><b id="hdrValueM">—</b><span id="hdrPLM" class="small"></span></div></div>
   </header>
 
   <div class="main-wrap">
     <div id="offline" class="banner" hidden></div>
-    <main id="view"></main>
+    <main><nav id="subnav" class="subnav" aria-label="Sous-sections" hidden></nav><div id="view"></div></main>
   </div>
 
   <nav class="tabbar" id="tabbar" aria-label="Navigation principale">
@@ -84,10 +88,9 @@
   </nav>
   <div class="sheet" id="moreSheet" hidden>
     <div class="sheet-card" role="menu">
+      <a href="#ajout?mode=scan" role="menuitem" class="wide"><svg><use href="#i-scan"/></svg>Scanner / ajout rapide</a>
+      <a href="#opportunites" role="menuitem"><svg><use href="#i-trend"/></svg>Opportunités</a>
       <a href="#wishlist" role="menuitem"><svg><use href="#i-heart"/></svg>Wishlist</a>
-      <a href="#fardes" role="menuitem"><svg><use href="#i-binder"/></svg>Fardes</a>
-      <a href="#series" role="menuitem"><svg><use href="#i-grid"/></svg>Séries</a>
-      <a href="#import" role="menuitem"><svg><use href="#i-upload"/></svg>Import</a>
       <a href="#reglages" role="menuitem"><svg><use href="#i-gear"/></svg>Réglages</a>
     </div>
   </div>

@@ -3,7 +3,8 @@
 const CACHE = 'farde-__VERSION__';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/main.js', 'js/store.js', 'js/ui.js', 'js/valuation.js', 'js/match.js', 'js/tcgdex.js',
   'js/carddialog.js', 'js/config.js', 'js/vendor/supabase.js', 'js/views/dashboard.js', 'js/views/catalogue.js', 'js/views/collection.js',
-  'js/views/import.js', 'js/views/binders.js', 'js/views/sets.js', 'js/views/sealed.js', 'js/views/wishlist.js', 'js/views/settings.js',
+  'js/views/import.js', 'js/views/binders.js', 'js/views/sets.js', 'js/views/sealed.js', 'js/views/wishlist.js', 'js/views/settings.js', 'js/views/expenses.js', 'js/views/opportunities.js',
+  'js/views/sales.js', 'js/views/quickadd.js', 'js/search.js', 'js/sell.js', 'js/scan.js', 'js/ocr.js', 'js/excel.js', 'vitrine.html', 'js/vitrine.js',
   'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

@@ -185,19 +185,35 @@ export function combo(input, { source, render, onPick, minChars = 0, debounce = 
   return { close, refresh: run, list };
 }
 
-/** Champ « série » filtrable : tape quelques lettres, choisis dans la liste. */
-export function setPicker(input, getSets, onPick, { allLabel = 'Toutes les séries' } = {}) {
-  const fold = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/**
+ * Champ « série » filtrable, avec les séries rangées par bloc.
+ * getGroups() -> [{ name, sets: [{ id, name, cardCount }] }]
+ * Taper le nom d'un bloc (« écarlate », « méga ») affiche toutes ses séries ; cliquer un bloc filtre dessus.
+ */
+export function setPicker(input, getGroups, onPick, { allLabel = 'Toutes les séries' } = {}) {
+  const fold = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   input.placeholder = allLabel;
   const c = combo(input, {
     source: async (q) => {
-      const sets = await getSets();
+      const groups = await getGroups();
       const f = fold(q);
-      const list = f ? sets.filter((s) => fold(s.name).includes(f) || fold(s.id).includes(f)) : sets;
-      return [{ id: '', name: allLabel }, ...list.slice(0, 80)];
+      const out = [{ id: '', name: allLabel }];
+      for (const g of groups) {
+        const gm = f && fold(g.name).includes(f);
+        const sets = !f || gm ? g.sets : g.sets.filter((s) => fold(s.name).includes(f) || fold(s.id).includes(f));
+        if (!sets.length) continue;
+        out.push({ header: true, name: g.name });
+        out.push(...sets.map((s) => ({ ...s, bloc: g.name })));
+        if (out.length > 160) break;
+      }
+      return out;
     },
-    render: (s) => s.id ? `<span class="ellip" style="flex:1">${esc(s.name)}</span><span class="muted small num">${s.cardCount?.official ?? ''}</span>` : `<span class="muted">${esc(s.name)}</span>`,
-    onPick: (s) => { input.value = s.id ? s.name : ''; onPick(s.id ? s : null); },
+    render: (s) => s.header ? `<span class="combo-group">${esc(s.name)}</span>`
+      : s.id ? `<span class="ellip" style="flex:1">${esc(s.name)}</span><span class="muted small num">${s.cardCount?.official ?? ''}</span>` : `<span class="muted">${esc(s.name)}</span>`,
+    onPick: (s) => {
+      if (s.header) { input.value = s.name; input.focus(); c.refresh(); return; }
+      input.value = s.id ? s.name : ''; onPick(s.id ? s : null);
+    },
   });
   input.addEventListener('change', () => { if (!input.value.trim()) onPick(null); });
   return c;

@@ -1,129 +1,158 @@
 import { S, ownedQty } from '../store.js';
-import { getSetsNewestFirst, getSets, searchCards, getCard } from '../tcgdex.js';
+import { getSets, getCard, searchAny, groupsFor, LANG_ORDER } from '../tcgdex.js';
 import { cmPrice } from '../valuation.js';
 import { norm, setIdOf } from '../match.js';
 import { openCard } from '../carddialog.js';
-import { esc, eur, cardImg, langOptions, pool, combo, setPicker, $ } from '../ui.js';
+import { esc, eur, cardImg, LANGS, pool, combo, setPicker, $ } from '../ui.js';
 
 const PER = 24;
-const st = { q: '', mode: 'name', lang: null, set: null, sort: 'def', exact: false, page: 1, list: [], details: new Map(), seq: 0 };
+const MAX_DETAILS = 400;   // au-delà, on demande d'affiner avant de charger raretés et cotes
+const st = { q: '', mode: 'name', lang: 'all', set: null, sort: 'def', rarity: '', exact: false, page: 1, list: [], details: new Map(), seq: 0, loading: false };
 let root;
 
+const dkey = (it) => `${it.lang}:${it.id}`;
+const langOpts = (sel) => `<option value="all" ${sel === 'all' ? 'selected' : ''}>Toutes les langues</option>` + LANG_ORDER.map((k) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${LANGS[k]}</option>`).join('');
+
 export function render(el) {
-  st.lang = st.lang || S.settings.default_lang || 'fr';
   el.innerHTML = `<section class="view">
-    <div class="vh"><div><h2>Catalogue</h2><p>Toutes les cartes Pokémon via TCGdex, en 6 langues. Tape un nom : les cartes s’affichent pendant la frappe.</p></div></div>
+    <div class="vh"><div><h2>Catalogue</h2><p>Toutes les cartes Pokémon, dans toutes les langues. Tape un nom : les cartes s’affichent pendant la frappe.</p></div></div>
     <form class="panel search" id="cForm">
-      <div class="field q"><label for="cQ">Recherche</label><input id="cQ" type="search" placeholder="Dracaufeu, 199, Mitsuhiro Arita…" value="${esc(st.q)}" enterkeyhint="search"></div>
+      <div class="field q"><label for="cQ">Recherche</label><input id="cQ" type="search" placeholder="Dracaufeu, Charizard, 199, Mitsuhiro Arita…" value="${esc(st.q)}" enterkeyhint="search"></div>
       <div class="field"><label for="cMode">Par</label><select id="cMode"><option value="name">Nom</option><option value="num">Numéro</option><option value="illu">Illustrateur</option></select></div>
-      <div class="field"><label for="cLang">Langue</label><select id="cLang">${langOptions(st.lang)}</select></div>
+      <div class="field"><label for="cLang">Langue</label><select id="cLang">${langOpts(st.lang)}</select></div>
       <div class="field"><label for="cSet">Série</label><input id="cSet" type="text" value="${esc(st.set?.name || '')}"></div>
-      <div class="field"><label for="cSort">Tri</label><select id="cSort"><option value="def">Numéro</option><option value="price">Prix décroissant</option><option value="name">Nom</option></select></div>
+      <div class="field"><label for="cSort">Tri</label><select id="cSort"><option value="def">Numéro</option><option value="price">Prix décroissant</option><option value="price_asc">Prix croissant</option><option value="name">Nom</option></select></div>
       <div class="field"><label>&nbsp;</label><button class="btn pri" type="submit">Chercher</button></div>
     </form>
-    <label class="row note" style="gap:6px"><input type="checkbox" id="cExact" ${st.exact ? 'checked' : ''}> Nom exact uniquement</label>
-    <div id="cStatus" class="muted"></div>
+    <div class="row between">
+      <div class="row"><label class="row small" style="gap:6px"><input type="checkbox" id="cExact" ${st.exact ? 'checked' : ''}> Nom exact</label>
+        <label class="row small" style="gap:6px">Rareté <select id="cRarity" style="width:auto;min-width:180px" disabled><option value="">Toutes</option></select></label></div>
+      <span id="cStatus" class="muted small"></span>
+    </div>
     <div class="cards" id="cGrid"></div>
     <div class="pager" id="cPager" hidden><button class="btn" id="cPrev">Précédent</button><span class="num" id="cPage"></span><button class="btn" id="cNext">Suivant</button></div>
   </section>`;
   root = el.firstElementChild;
   $('#cMode', root).value = st.mode; $('#cSort', root).value = st.sort;
 
-  // Série : champ filtrable ; choisir une série affiche directement toutes ses cartes
-  setPicker($('#cSet', root), () => getSetsNewestFirst(st.lang), (s) => {
-    st.set = s;
-    if (s) { st.page = 1; search(); }
-  });
+  setPicker($('#cSet', root), () => groupsFor(st.lang), (s) => { st.set = s; if (s) { st.page = 1; search(); } });
 
-  // Suggestions pendant la frappe (recherche par nom)
   const qc = combo($('#cQ', root), {
     minChars: 2, debounce: 250, empty: 'Aucune carte ne commence comme ça.',
     source: async (q) => {
       if ($('#cMode', root).value !== 'name') return [];
-      const [list, sets] = await Promise.all([searchCards(st.lang, { q, mode: 'name', setId: st.set?.id || null }), getSets(st.lang)]);
-      const byId = new Map(sets.map((s) => [s.id, s])), nq = norm(q);
-      const score = (c) => (norm(c.name) === nq ? 0 : norm(c.name).startsWith(nq) ? 1 : 2);
-      // les séries récentes d'abord à pertinence égale
-      const order = new Map(sets.map((s, i) => [s.id, i]));
+      const list = await searchAny(st.lang, { q, mode: 'name', setId: st.set?.id || null }, S.settings.default_lang || 'fr');
+      const langs = [...new Set(list.map((c) => c.lang))];
+      const setsBy = new Map();
+      await Promise.all(langs.map(async (l) => { for (const s of await getSets(l).catch(() => [])) setsBy.set(`${l}:${s.id}`, { s, i: setsBy.size }); }));
+      const nq = norm(q), score = (c) => (norm(c.name) === nq ? 0 : norm(c.name).startsWith(nq) ? 1 : 2);
       qc.total = list.length;
-      return list.map((c) => ({ ...c, set: byId.get(setIdOf(c.id)) }))
-        .sort((a, b) => score(a) - score(b) || (order.get(b.set?.id) ?? 0) - (order.get(a.set?.id) ?? 0)).slice(0, 8);
+      return list.map((c) => ({ ...c, set: setsBy.get(`${c.lang}:${setIdOf(c.id)}`)?.s, order: setsBy.get(`${c.lang}:${setIdOf(c.id)}`)?.i ?? 0 }))
+        .sort((a, b) => score(a) - score(b) || b.order - a.order).slice(0, 8);
     },
-    render: (c) => `${cardImg(c.image, c.name, 'thumb')}<div style="min-width:0;flex:1"><div class="ellip">${esc(c.name)}</div><div class="combo-sub ellip">${esc(c.set?.name || '')} · ${esc(c.localId)}${c.set?.cardCount?.official ? '/' + c.set.cardCount.official : ''}</div></div>${ownedQty(st.lang, c.id) ? `<span class="pill ok">×${ownedQty(st.lang, c.id)}</span>` : ''}`,
+    render: (c) => `${cardImg(c.image, c.name, 'thumb')}<div style="min-width:0;flex:1"><div class="ellip">${esc(c.name)}</div><div class="combo-sub ellip">${esc(c.set?.name || '')} · ${esc(c.localId)}${c.set?.cardCount?.official ? '/' + c.set.cardCount.official : ''}${st.lang === 'all' ? ' · ' + c.lang.toUpperCase() : ''}</div></div>${ownedQty(c.lang, c.id) ? `<span class="pill ok">×${ownedQty(c.lang, c.id)}</span>` : ''}`,
     footer: (q, items) => (items.length ? `<div class="combo-foot" data-keep data-all>Voir les ${qc.total > 8 ? qc.total + ' ' : ''}résultats pour « ${esc(q)} »</div>` : ''),
-    onPick: (c) => openCard(st.lang, c.id),
+    onPick: (c) => openCard(c.lang, c.id),
   });
   qc.list.addEventListener('click', (e) => { if (e.target.closest('[data-all]')) { qc.close(); st.page = 1; search(); } });
 
-  $('#cLang', root).onchange = () => { st.lang = $('#cLang', root).value; st.set = null; $('#cSet', root).value = ''; };
+  $('#cLang', root).onchange = () => { st.lang = $('#cLang', root).value; st.set = null; $('#cSet', root).value = ''; if (st.q) { st.page = 1; search(); } };
   $('#cForm', root).onsubmit = (e) => { e.preventDefault(); qc.close(); st.page = 1; search(); };
-  $('#cSort', root).onchange = () => { st.sort = $('#cSort', root).value; draw(); };
+  $('#cSort', root).onchange = () => { st.sort = $('#cSort', root).value; st.page = 1; draw(); };
+  $('#cRarity', root).onchange = () => { st.rarity = $('#cRarity', root).value; st.page = 1; draw(); };
   $('#cPrev', root).onclick = () => { st.page--; draw(); scrollTo(0, 0); };
   $('#cNext', root).onclick = () => { st.page++; draw(); scrollTo(0, 0); };
-  $('#cGrid', root).addEventListener('click', (e) => { const t = e.target.closest('.tile'); if (t) openCard(st.lang, t.dataset.id); });
-  if (st.list.length) draw();
+  $('#cGrid', root).addEventListener('click', (e) => { const t = e.target.closest('.tile'); if (t) openCard(t.dataset.lang, t.dataset.id); });
+  if (st.list.length) { draw(); rarities(); }
   else $('#cStatus', root).textContent = 'Tape le nom d’une carte, ou choisis une série pour la parcourir en entier.';
 }
 
 async function search() {
   st.q = $('#cQ', root).value.trim(); st.mode = $('#cMode', root).value; st.lang = $('#cLang', root).value;
-  st.exact = $('#cExact', root).checked; st.sort = $('#cSort', root).value;
-  if (!st.q && !st.set) { $('#cStatus', root).textContent = 'Saisis un nom, un numéro ou choisis une série.'; return; }
+  st.exact = $('#cExact', root).checked; st.sort = $('#cSort', root).value; st.rarity = '';
+  if (!st.q && !st.set) { ++st.seq; st.list = []; $('#cGrid', root).innerHTML = ''; $('#cPager', root).hidden = true; rarities(); $('#cStatus', root).textContent = 'Saisis un nom, un numéro ou choisis une série.'; return; }
   const my = ++st.seq;
   $('#cStatus', root).innerHTML = `<span class="spin"></span> Recherche…`;
   $('#cGrid', root).innerHTML = '';
   try {
-    const list = await searchCards(st.lang, { q: st.q, mode: st.mode, exact: st.exact, setId: st.set?.id || null });
+    const list = await searchAny(st.lang, { q: st.q, mode: st.mode, exact: st.exact, setId: st.set?.id || null }, S.settings.default_lang || 'fr');
     if (my !== st.seq) return;
     st.list = list;
-    draw();
+    rarities(); draw(); loadDetails(my);
   } catch (e) {
     $('#cStatus', root).innerHTML = `<span class="loss">${esc(e.message)}. Vérifie ta connexion et réessaie.</span>`;
   }
 }
 
-const priceOf = (id) => { const d = st.details.get(`${st.lang}:${id}`); return d ? cmPrice(d.cm, S.settings.basis, 'normal') : undefined; };
+/** Charge cotes et raretés de tous les résultats (en cache 24 h), pour trier et filtrer sur l'ensemble. */
+async function loadDetails(my) {
+  const todo = st.list.slice(0, MAX_DETAILS).filter((it) => !st.details.has(dkey(it)));
+  if (!todo.length) { rarities(); return; }
+  st.loading = true;
+  let last = 0;
+  await pool(todo, 8, async (it) => {
+    const d = await getCard(it.lang, it.id).catch(() => null);
+    st.details.set(dkey(it), d || { cm: null, rarity: null });
+    if (my === st.seq) tile(it);
+  }, (d, n) => {
+    if (my !== st.seq || !root?.isConnected) return;
+    $('#cStatus', root).textContent = `${count()} · cotes et raretés ${d}/${n}`;
+    if (Date.now() - last > 1500) { last = Date.now(); rarities(); }
+  });
+  st.loading = false;
+  if (my !== st.seq || !root?.isConnected) return;
+  rarities();
+  if (st.sort !== 'def' || st.rarity) draw(); else $('#cStatus', root).textContent = count();
+}
 
+const count = () => { const n = filtered().length; return `${n.toLocaleString('fr-FR')} carte${n > 1 ? 's' : ''}${st.set ? ' · ' + st.set.name : ''}${st.list.length > MAX_DETAILS ? ' · affine la recherche pour trier et filtrer par rareté' : ''}`; };
+const priceOf = (it) => { const d = st.details.get(dkey(it)); return d ? cmPrice(d.cm, S.settings.basis, 'normal') : undefined; };
+
+function rarities() {
+  const sel = $('#cRarity', root); if (!sel) return;
+  const cnt = new Map();
+  for (const it of st.list) { const r = st.details.get(dkey(it))?.rarity; if (r && r !== 'None') cnt.set(r, (cnt.get(r) || 0) + 1); }
+  const keep = st.rarity;
+  sel.innerHTML = `<option value="">Toutes</option>` + [...cnt].sort((a, b) => a[0].localeCompare(b[0], 'fr')).map(([r, n]) => `<option value="${esc(r)}">${esc(r)} (${n})</option>`).join('');
+  sel.value = cnt.has(keep) ? keep : '';
+  sel.disabled = !cnt.size;
+}
+
+function filtered() {
+  return st.rarity ? st.list.filter((it) => st.details.get(dkey(it))?.rarity === st.rarity) : st.list;
+}
 function sorted() {
-  const L = st.list.slice();
-  if (st.sort === 'price') L.sort((a, b) => (priceOf(b.id) ?? -1) - (priceOf(a.id) ?? -1));
+  const L = filtered().slice();
+  if (st.sort === 'price') L.sort((a, b) => (priceOf(b) ?? -1) - (priceOf(a) ?? -1));
+  else if (st.sort === 'price_asc') L.sort((a, b) => (priceOf(a) ?? 1e9) - (priceOf(b) ?? 1e9));
   else if (st.sort === 'name') L.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   return L;
 }
 
-async function draw() {
+function draw() {
   if (!root?.isConnected) return;
   const all = sorted(), pages = Math.max(1, Math.ceil(all.length / PER));
   st.page = Math.min(Math.max(1, st.page), pages);
   const items = all.slice((st.page - 1) * PER, st.page * PER);
-  $('#cStatus', root).textContent = all.length
-    ? `${all.length.toLocaleString('fr-FR')} carte${all.length > 1 ? 's' : ''}${st.set ? ' · ' + st.set.name : ''}`
-    : 'Aucune carte trouvée. Essaie une recherche partielle, une autre langue ou sans série.';
-  $('#cGrid', root).innerHTML = items.map((it) => `<button class="tile" data-id="${esc(it.id)}"><div class="img">${cardImg(it.image, it.name)}<span class="own"></span></div>
+  $('#cStatus', root).textContent = all.length ? count() + (st.loading && st.sort !== 'def' ? ' · tri en cours…' : '')
+    : (st.list.length ? 'Aucune carte de cette rareté.' : 'Aucune carte trouvée. Essaie une recherche partielle, ou « Toutes les langues ».');
+  $('#cGrid', root).innerHTML = items.map((it) => `<button class="tile" data-id="${esc(it.id)}" data-lang="${it.lang}"><div class="img">${cardImg(it.image, it.name)}${st.lang === 'all' ? `<span class="langtag">${it.lang}</span>` : ''}<span class="own"></span></div>
     <div class="t1 ellip">${esc(it.name)}</div><div class="t2"><span class="num">${esc(it.localId)}</span><b class="num pr">…</b></div></button>`).join('');
   $('#cPager', root).hidden = pages <= 1;
   $('#cPrev', root).disabled = st.page <= 1; $('#cNext', root).disabled = st.page >= pages;
   $('#cPage', root).textContent = `Page ${st.page} / ${pages}`;
   items.forEach(tile);
-  const lang = st.lang;
-  await pool(items.filter((it) => !st.details.has(`${lang}:${it.id}`)), 6, async (it) => {
-    const d = await getCard(lang, it.id).catch(() => null);
-    st.details.set(`${lang}:${it.id}`, d || { cm: null });
-    tile(it);
-  });
-  // Le tri par prix a besoin des cotes : on retrie une fois chargées
-  if (st.sort === 'price' && root?.isConnected) { const ids = items.map((i) => i.id).join(); if (sorted().slice((st.page - 1) * PER, st.page * PER).map((i) => i.id).join() !== ids) draw(); }
 }
 
 function tile(it) {
-  const el = root?.querySelector(`.tile[data-id="${CSS.escape(it.id)}"]`);
+  const el = root?.querySelector(`.tile[data-id="${CSS.escape(it.id)}"][data-lang="${it.lang}"]`);
   if (!el) return;
-  const p = priceOf(it.id);
+  const p = priceOf(it);
   el.querySelector('.pr').textContent = p === undefined ? '…' : p == null ? 'pas de cote' : eur(p);
-  const own = ownedQty(st.lang, it.id);
+  const own = ownedQty(it.lang, it.id);
   el.querySelector('.own').outerHTML = own ? `<span class="badge own">×${own}</span>` : `<span class="own"></span>`;
-  const d = st.details.get(`${st.lang}:${it.id}`);
+  const d = st.details.get(dkey(it));
   if (d?.set?.total) el.querySelector('.t2 span').textContent = `${it.localId}/${d.set.total}`;
 }
 
-export function update() { if (root?.isConnected) st.list.slice((st.page - 1) * PER, st.page * PER).forEach(tile); }
+export function update() { if (root?.isConnected) sorted().slice((st.page - 1) * PER, st.page * PER).forEach(tile); }

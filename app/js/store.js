@@ -1,7 +1,7 @@
 // Données de l'utilisateur (Supabase) + cotes, avec copie locale pour le mode hors ligne.
 import { createClient } from './vendor/supabase.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
-import { DEFAULT_SETTINGS, DEFAULT_COND, cardKey, portfolio, lineCalc, sealedCalc, parisDay, cmPrice, resolveCm } from './valuation.js';
+import { DEFAULT_SETTINGS, DEFAULT_COND, cardKey, portfolio, lineCalc, sealedCalc, parisDay, cmPrice, resolveCm, expenseCalc, round2 } from './valuation.js';
 import { getCard } from './tcgdex.js';
 import { pool } from './ui.js';
 
@@ -15,7 +15,7 @@ export const sb = configured
 export const S = {
   user: null,
   settings: { ...DEFAULT_SETTINGS },
-  cards: [], sealed: [], wish: [], binders: [],
+  cards: [], sealed: [], wish: [], binders: [], expenses: [], sales: [], movers: [], deals: new Map(),
   prices: new Map(),       // "lang:card_id" -> ligne card_prices (tâche quotidienne)
   live: new Map(),         // "lang:card_id" -> carte TCGdex récupérée en direct
   sealedPrices: new Map(), // cm_id -> ligne cm_sealed
@@ -59,7 +59,7 @@ const snapKey = () => `farde.snap.${S.user?.id}`;
 function saveSnapshot() {
   try {
     localStorage.setItem(snapKey(), JSON.stringify({
-      savedAt: Date.now(), settings: S.settings, cards: S.cards, sealed: S.sealed, wish: S.wish, binders: S.binders,
+      savedAt: Date.now(), settings: S.settings, expenses: S.expenses, sales: S.sales, movers: S.movers, cards: S.cards, sealed: S.sealed, wish: S.wish, binders: S.binders,
       prices: [...S.prices.values()], sealedPrices: [...S.sealedPrices.values()], history: S.history, lastJob: S.lastJob,
     }));
   } catch { /* stockage plein : pas de copie hors ligne */ }
@@ -68,7 +68,7 @@ function loadSnapshot() {
   try {
     const s = JSON.parse(localStorage.getItem(snapKey()) || 'null');
     if (!s) return false;
-    Object.assign(S, { settings: s.settings, cards: s.cards, sealed: s.sealed, wish: s.wish, binders: s.binders, history: s.history, lastJob: s.lastJob });
+    Object.assign(S, { settings: s.settings, expenses: s.expenses || [], sales: s.sales || [], movers: s.movers || [], cards: s.cards, sealed: s.sealed, wish: s.wish, binders: s.binders, history: s.history, lastJob: s.lastJob });
     S.prices = new Map(s.prices.map((r) => [cardKey(r.lang, r.card_id), r]));
     S.sealedPrices = new Map(s.sealedPrices.map((r) => [Number(r.id), r]));
     S.loadedAt = s.savedAt;
@@ -79,7 +79,7 @@ function loadSnapshot() {
 // ---- Chargement complet ----
 export async function loadAll() {
   try {
-    const [settings, cards, sealed, wish, binders, history, job] = await Promise.all([
+    const [settings, cards, sealed, wish, binders, history, job, expenses, sales, movers] = await Promise.all([
       sb.from('user_settings').select('*').maybeSingle().then((r) => must(r, 'Réglages')),
       fetchAll('collection', (q) => q.order('created_at', { ascending: true })),
       fetchAll('sealed', (q) => q.order('created_at', { ascending: true })),
@@ -87,10 +87,14 @@ export async function loadAll() {
       fetchAll('binders', (q) => q.order('position').order('created_at')),
       fetchAll('portfolio_history', (q) => q.order('d')),
       sb.from('job_runs').select('*').order('id', { ascending: false }).limit(1).then((r) => must(r, 'Journal')),
+      fetchAll('expenses', (q) => q.order('d', { ascending: false })).catch(() => []),
+      // Tables de la version 1.4 : si le schéma n'a pas encore été mis à jour, l'app fonctionne quand même
+      fetchAll('sales', (q) => q.order('d', { ascending: false }).order('created_at', { ascending: false })).catch(() => []),
+      fetchAll('movers').catch(() => []),
     ]);
     S.settings = { ...DEFAULT_SETTINGS, ...(settings || {}), cond: { ...DEFAULT_COND, ...(settings?.cond || {}) } };
     if (!settings) await sb.from('user_settings').upsert({ user_id: S.user.id }).then(() => {});
-    Object.assign(S, { cards, sealed, wish, binders, history, lastJob: job?.[0] || null });
+    Object.assign(S, { cards, sealed, wish, binders, history, expenses, sales, movers, lastJob: job?.[0] || null });
     if (!binders.length) {
       const b = must(await sb.from('binders').insert({ name: 'Ma farde' }).select().single(), 'Création de la farde');
       S.binders = [b];
@@ -124,6 +128,14 @@ export async function loadPrices() {
     for (const r of data) sp.set(Number(r.id), r);
   }
   S.sealedPrices = sp;
+  // Opportunités du jour qui concernent la wishlist
+  const wids = [...new Set(S.wish.map((w) => w.card_id))];
+  const deals = new Map();
+  for (let i = 0; i < wids.length; i += 150) {
+    const { data } = await sb.from('deals').select('card_id,trend,avg30,drop_pct').in('card_id', wids.slice(i, i + 150));
+    for (const r of data || []) deals.set(r.card_id, r);
+  }
+  S.deals = deals;
 }
 
 /**
@@ -186,7 +198,7 @@ export const calcSealed = (s) => sealedCalc(s, s.cm_id != null ? S.sealedPrices.
 export function totals() {
   const priceMap = new Map();
   for (const c of S.cards) priceMap.set(cardKey(c.lang, c.card_id), priceOf(c.lang, c.card_id));
-  const t = portfolio(S.cards, S.sealed, priceMap, S.sealedPrices, S.settings);
+  const t = portfolio(S.cards, S.sealed, priceMap, S.sealedPrices, S.settings, S.expenses, S.sales);
   t.alerts = S.wish.filter((w) => w.target_price != null && wishPrice(w) != null && wishPrice(w) <= Number(w.target_price)).length;
   t.toCheck = S.cards.filter((l) => calcLine(l).toCheck).length;
   return t;
@@ -200,6 +212,7 @@ export async function snapshotToday() {
   if (S.offline || (!S.cards.length && !S.sealed.length)) return;
   const t = totals();
   const row = { user_id: S.user.id, d: parisDay(), value: t.value, invested: t.invested, cards_value: t.cardsValue, sealed_value: t.sealedValue };
+  if (S.sales.length) row.realized = t.realized;
   const sig = JSON.stringify(row);
   if (sig === lastSnap) return;
   lastSnap = sig;
@@ -221,7 +234,7 @@ export async function addCard(row) {
 export async function updateCard(id, patch) {
   guard();
   const r = must(await sb.from('collection').update(patch).eq('id', id).select().single(), 'Modification');
-  const i = S.cards.findIndex((c) => c.id === id); if (i >= 0) S.cards[i] = r; emit(); return r;
+  const i = S.cards.findIndex((c) => c.id === id); if (i >= 0) S.cards[i] = r; emit(); refreshLivePrices(); return r;
 }
 export async function deleteCards(ids) {
   guard();
@@ -234,6 +247,11 @@ export async function moveCards(ids, binderId) {
   const set = new Set(ids); S.cards.forEach((c) => { if (set.has(c.id)) c.binder_id = binderId; }); emit();
 }
 /** Import en masse, par paquets de 200. */
+export async function moveToExpense(ids, expenseId) {
+  guard();
+  for (let i = 0; i < ids.length; i += 150) must(await sb.from('collection').update({ expense_id: expenseId }).in('id', ids.slice(i, i + 150)), 'Rattachement');
+  const set = new Set(ids); S.cards.forEach((c) => { if (set.has(c.id)) c.expense_id = expenseId; }); emit();
+}
 export async function bulkInsertCards(rows, onProgress) {
   guard();
   const out = [];
@@ -243,6 +261,27 @@ export async function bulkInsertCards(rows, onProgress) {
     onProgress?.(Math.min(i + 200, rows.length), rows.length);
   }
   emit(); refreshLivePrices(); return out;
+}
+
+export async function addExpense(row) {
+  guard();
+  const r = must(await sb.from('expenses').insert(row).select().single(), 'Dépense');
+  S.expenses.unshift(r); S.expenses.sort((a, b) => b.d.localeCompare(a.d)); emit(); return r;
+}
+export async function updateExpense(id, patch) {
+  guard();
+  const r = must(await sb.from('expenses').update(patch).eq('id', id).select().single(), 'Dépense');
+  const i = S.expenses.findIndex((e) => e.id === id); if (i >= 0) S.expenses[i] = r; emit(); return r;
+}
+export async function deleteExpense(id) {
+  guard(); must(await sb.from('expenses').delete().eq('id', id), 'Dépense');
+  S.expenses = S.expenses.filter((e) => e.id !== id);
+  S.cards.forEach((c) => { if (c.expense_id === id) c.expense_id = null; }); emit();
+}
+export function expenseStats(e) {
+  const priceMap = new Map();
+  for (const c of S.cards) if (c.expense_id === e.id) priceMap.set(cardKey(c.lang, c.card_id), priceOf(c.lang, c.card_id));
+  return expenseCalc(e, S.cards, priceMap, S.settings, S.sales);
 }
 
 export async function addSealed(row) {
@@ -336,6 +375,112 @@ export async function sealedCatalogSize() {
 
 export async function deleteEverything() {
   guard();
-  for (const t of ['collection', 'sealed', 'wishlist', 'portfolio_history', 'binders']) must(await sb.from(t).delete().eq('user_id', S.user.id), 'Suppression');
+  for (const t of ['collection', 'sealed', 'wishlist', 'portfolio_history', 'binders', 'sales', 'expenses', 'showcases']) {
+    const r = await sb.from(t).delete().eq('user_id', S.user.id);
+    if (r.error && !['sales', 'showcases'].includes(t)) must(r, 'Suppression');
+  }
+  await loadAll();
+}
+
+// ---- Ventes ----
+const strip = (row) => { const { id, user_id, created_at, updated_at, ...rest } = row; return rest; };
+/**
+ * Vend tout ou partie d'une ligne (carte ou scellé) : la vente est enregistrée avec son coût d'achat,
+ * puis la ligne perd les exemplaires vendus (ou disparaît).
+ */
+export async function sellLine(kind, line, { qty, price, fees = 0, d, notes = null }) {
+  guard();
+  qty = Math.max(1, Math.min(line.qty, qty | 0));
+  const sale = {
+    kind, qty, price, fees: fees || 0, d, notes,
+    cost: line.buy_price != null ? round2(Number(line.buy_price) * qty) : null,
+    name: line.name, image: kind === 'card' ? line.image : (line.image_url || S.sealedPrices.get(Number(line.cm_id))?.image || null),
+    lang: line.lang || null, item: strip(line),
+    ...(kind === 'card'
+      ? { card_id: line.card_id, set_name: line.set_name, local_id: line.local_id, variant: line.variant, expense_id: line.expense_id || null }
+      : { cm_id: line.cm_id ?? null, set_name: line.category || null }),
+  };
+  const r = must(await sb.from('sales').insert(sale).select().single(), 'Vente');
+  S.sales.unshift(r); S.sales.sort((a, b) => b.d.localeCompare(a.d));
+  const table = kind === 'card' ? 'collection' : 'sealed', list = kind === 'card' ? 'cards' : 'sealed';
+  if (qty >= line.qty) {
+    must(await sb.from(table).delete().eq('id', line.id), 'Vente');
+    S[list] = S[list].filter((x) => x.id !== line.id);
+  } else {
+    const u = must(await sb.from(table).update({ qty: line.qty - qty }).eq('id', line.id).select().single(), 'Vente');
+    const i = S[list].findIndex((x) => x.id === line.id); if (i >= 0) S[list][i] = u;
+  }
+  emit(); return r;
+}
+export async function updateSale(id, patch) {
+  guard();
+  const r = must(await sb.from('sales').update(patch).eq('id', id).select().single(), 'Vente');
+  const i = S.sales.findIndex((x) => x.id === id); if (i >= 0) S.sales[i] = r; emit(); return r;
+}
+/** Annule une vente : les exemplaires reviennent dans la collection. */
+export async function undoSale(sale) {
+  guard();
+  if (sale.item) {
+    const back = { ...sale.item, qty: sale.qty };
+    if (back.binder_id && !S.binders.some((b) => b.id === back.binder_id)) back.binder_id = null;
+    if (back.expense_id && !S.expenses.some((e) => e.id === back.expense_id)) back.expense_id = null;
+    if (sale.kind === 'card') { const r = must(await sb.from('collection').insert(back).select().single(), 'Annulation'); S.cards.push(r); }
+    else { const r = must(await sb.from('sealed').insert(back).select().single(), 'Annulation'); S.sealed.push(r); }
+  }
+  must(await sb.from('sales').delete().eq('id', sale.id), 'Annulation');
+  S.sales = S.sales.filter((x) => x.id !== sale.id);
+  emit(); refreshLivePrices();
+}
+
+// ---- Vitrine ----
+export async function listShowcases() { return must(await sb.from('showcases').select('*').order('created_at'), 'Vitrine'); }
+export async function createShowcase(row) { return must(await sb.from('showcases').insert(row).select().single(), 'Vitrine'); }
+export async function deleteShowcase(token) { must(await sb.from('showcases').delete().eq('token', token), 'Vitrine'); }
+
+// ---- Sauvegarde ----
+export function backupData() {
+  return { app: 'farde', version: 2, exportedAt: new Date().toISOString(), settings: S.settings, binders: S.binders, expenses: S.expenses,
+    collection: S.cards, sealed: S.sealed, wishlist: S.wish, sales: S.sales, history: S.history };
+}
+/**
+ * Restaure une sauvegarde .json. mode 'replace' : efface d'abord tout ; 'merge' : ajoute à l'existant.
+ * Les identifiants sont recréés et les liens farde / dépense sont reconstitués.
+ */
+export async function restoreBackup(data, mode, onStep = () => {}) {
+  guard();
+  if (!data || data.app !== 'farde' || !Array.isArray(data.collection)) throw new DbError('Ce fichier n’est pas une sauvegarde Farde.');
+  if (mode === 'replace') { onStep('Effacement des données actuelles…'); for (const t of ['collection', 'sealed', 'wishlist', 'portfolio_history', 'sales', 'binders', 'expenses']) await sb.from(t).delete().eq('user_id', S.user.id); }
+  const ins = async (table, rows, label) => {
+    const out = [];
+    for (let i = 0; i < rows.length; i += 200) {
+      onStep(`${label} : ${Math.min(i + 200, rows.length)}/${rows.length}`);
+      out.push(...must(await sb.from(table).insert(rows.slice(i, i + 200), { defaultToNull: false }).select(), label));
+    }
+    return out;
+  };
+  const binderMap = new Map(), expMap = new Map();
+  const curBinders = mode === 'replace' ? [] : S.binders;
+  for (const b of data.binders || []) {
+    const same = curBinders.find((x) => x.name === b.name);
+    if (same) { binderMap.set(b.id, same.id); continue; }
+    const [r] = await ins('binders', [{ name: b.name, layout: b.layout || '3x3', position: b.position ?? 0 }], 'Fardes');
+    binderMap.set(b.id, r.id);
+  }
+  for (const e of data.expenses || []) {
+    const [r] = await ins('expenses', [{ label: e.label, kind: e.kind || 'autre', amount: e.amount ?? 0, d: e.d, notes: e.notes ?? null }], 'Dépenses');
+    expMap.set(e.id, r.id);
+  }
+  const relink = (row) => ({ ...strip(row), binder_id: row.binder_id ? binderMap.get(row.binder_id) ?? null : null, expense_id: row.expense_id ? expMap.get(row.expense_id) ?? null : null });
+  await ins('collection', data.collection.map(relink), 'Cartes');
+  await ins('sealed', (data.sealed || []).map(strip), 'Scellés');
+  for (const w of data.wishlist || []) await sb.from('wishlist').upsert(strip(w), { onConflict: 'user_id,lang,card_id,variant' });
+  if ((data.sales || []).length) await ins('sales', data.sales.map((s) => ({ ...strip(s), expense_id: s.expense_id ? expMap.get(s.expense_id) ?? null : null })), 'Ventes');
+  const hist = (data.history || []).map((h) => ({ ...h, user_id: S.user.id }));
+  for (let i = 0; i < hist.length; i += 500) await sb.from('portfolio_history').upsert(hist.slice(i, i + 500), { onConflict: 'user_id,d' });
+  if (data.settings && mode === 'replace') {
+    const { user_id, updated_at, ...st } = data.settings;
+    await sb.from('user_settings').upsert({ ...st, user_id: S.user.id });
+  }
+  onStep('Rechargement…');
   await loadAll();
 }

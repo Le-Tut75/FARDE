@@ -1,4 +1,4 @@
-import { S, calcLine, deleteCards, moveCards } from '../store.js';
+import { S, calcLine, deleteCards, moveCards, moveToExpense } from '../store.js';
 import { variantLabel } from '../valuation.js';
 import { openCard } from '../carddialog.js';
 import { esc, eur, signEur, pct, plClass, cardImg, LANGS, toast, download, toCsv, csvNum, today, confirmButton, $, $$ } from '../ui.js';
@@ -7,9 +7,11 @@ const st = { q: '', lang: '', binder: '', type: '', sort: { k: 'value', d: -1 },
 let root;
 
 export function render(el) {
+  const qp = new URLSearchParams(location.hash.split('?')[1] || '');
+  if (qp.has('type')) st.type = qp.get('type');
   el.innerHTML = `<section class="view">
     <div class="vh"><div><h2>Collection</h2><p>Chaque ligne a son prix d’achat, son état et sa plus-value en direct.</p></div>
-      <div class="row"><button class="btn" id="kCsv">Exporter en CSV</button><a class="btn" href="#import">Importer</a><a class="btn pri" href="#catalogue">Ajouter des cartes</a></div></div>
+      <div class="row"><button class="btn" id="kXlsx">Excel</button><button class="btn" id="kCsv">CSV</button><a class="btn" href="#ajout?mode=scan"><svg class="ic"><use href="#i-scan"/></svg>Scanner</a><a class="btn pri" href="#catalogue">Ajouter des cartes</a></div></div>
     <div class="row panel">
       <div class="field" style="flex:2 1 200px"><label for="kQ">Filtrer</label><input id="kQ" type="search" placeholder="Nom, série, numéro…" value="${esc(st.q)}"></div>
       <div class="field" style="flex:1 1 120px"><label for="kLang">Langue</label><select id="kLang"></select></div>
@@ -21,7 +23,7 @@ export function render(el) {
       <th class="r" data-s="qty">Qté</th><th class="r" data-s="buy">Achat u.</th><th class="r" data-s="unit">Cote u.</th><th class="r" data-s="value">Valeur</th><th class="r" data-s="pl">P&amp;L</th>
     </tr></thead><tbody></tbody><tfoot></tfoot></table></div>
     <div class="row" id="kMore" hidden><button class="btn" id="kMoreBtn">Afficher plus</button></div>
-    <div class="bulk" id="kBulk" hidden><b id="kSelN"></b><select id="kMoveTo" aria-label="Farde de destination"></select><button class="btn sm" id="kMove">Déplacer</button><button class="btn sm" id="kDel">Supprimer</button><button class="btn sm" id="kNone">Annuler</button></div>
+    <div class="bulk" id="kBulk" hidden><b id="kSelN"></b><select id="kMoveTo" aria-label="Farde de destination"></select><button class="btn sm" id="kMove">Déplacer</button><select id="kExpTo" aria-label="Dépense"></select><button class="btn sm" id="kExp">Rattacher</button><button class="btn sm" id="kDel">Supprimer</button><button class="btn sm" id="kNone">Annuler</button></div>
   </section>`;
   root = el.firstElementChild;
   $('#kType', root).value = st.type;
@@ -42,6 +44,9 @@ export function render(el) {
     if (tr && !e.target.closest('.c-chk')) { const l = S.cards.find((c) => c.id === tr.dataset.id); if (l) openCard(l.lang, l.card_id, { line: l }); }
   });
   $('#kMoreBtn', root).onclick = () => { st.limit += 500; body(); };
+  $('#kExp', root).onclick = async () => {
+    try { const ids = [...st.sel], v = $('#kExpTo', root).value || null; await moveToExpense(ids, v); st.sel.clear(); toast(v ? `${ids.length} ligne${ids.length > 1 ? 's' : ''} rattachée${ids.length > 1 ? 's' : ''}.` : 'Rattachement retiré.'); } catch (e) { toast(e.message, 5000); }
+  };
   $('#kNone', root).onclick = () => { st.sel.clear(); body(); };
   $('#kMove', root).onclick = async () => {
     try { const ids = [...st.sel]; await moveCards(ids, $('#kMoveTo', root).value || null); st.sel.clear(); toast(`${ids.length} ligne${ids.length > 1 ? 's' : ''} déplacée${ids.length > 1 ? 's' : ''}.`); } catch (e) { toast(e.message, 5000); }
@@ -51,6 +56,11 @@ export function render(el) {
     try { const n = st.sel.size; await deleteCards([...st.sel]); st.sel.clear(); toast(`${n} ligne${n > 1 ? 's' : ''} supprimée${n > 1 ? 's' : ''}.`); } catch (err) { toast(err.message, 5000); }
   };
   $('#kCsv', root).onclick = exportCsv;
+  $('#kXlsx', root).onclick = async (e) => {
+    e.target.disabled = true;
+    try { const { exportExcel } = await import('../excel.js'); await exportExcel(); toast('Fichier Excel téléchargé : collection, scellés, dépenses, ventes et résumé.'); }
+    catch (err) { toast(err.message, 5000); } finally { e.target.disabled = false; }
+  };
   update();
 }
 
@@ -64,6 +74,8 @@ function selects() {
   kb.innerHTML = `<option value="">Toutes</option>${bOpts}<option value="__none">Sans farde</option>`;
   kb.value = st.binder;
   $('#kMoveTo', root).innerHTML = bOpts + `<option value="">Aucune farde</option>`;
+  $('#kExpTo', root).innerHTML = S.expenses.map((e) => `<option value="${e.id}">${esc(e.label)}</option>`).join('') + `<option value="">Aucune dépense</option>`;
+  $('#kExpTo', root).hidden = $('#kExp', root).hidden = !S.expenses.length;
 }
 
 function filtered() {
@@ -89,7 +101,7 @@ function body() {
   rows.sort((a, b) => { const A = key(a), B = key(b); return (typeof A === 'string' ? A.localeCompare(B, 'fr') : A - B) * st.sort.d; });
   const tb = $('#kTable tbody', root);
   if (!S.cards.length) {
-    tb.innerHTML = `<tr><td colspan="11"><div class="empty">Ta collection est vide. Cherche une carte dans le <a href="#catalogue">Catalogue</a> ou <a href="#import">importe ton tableur</a>.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="11"><div class="empty">Ta collection est vide. <a href="#ajout?mode=scan">Scanne tes cartes</a>, cherche-les dans le <a href="#catalogue">Catalogue</a> ou <a href="#import">importe ton tableur</a>.</div></td></tr>`;
     $('#kTable tfoot', root).innerHTML = ''; $('#kMore', root).hidden = true; bulkBar(); return;
   }
   const shown = rows.slice(0, st.limit);
@@ -128,7 +140,7 @@ function exportCsv() {
       l.qty, csvNum(l.buy_price), l.buy_date, csvNum(c.unit), csvNum(c.value), csvNum(c.pl), S.binders.find((b) => b.id === l.binder_id)?.name || '', l.notes, l.card_id];
   });
   download(`farde-collection-${today()}.csv`, toCsv(H, rows), 'text/csv;charset=utf-8');
-  toast('CSV exporté. Il se réimporte tel quel dans l’onglet Import.');
+  toast('CSV exporté. Il se réimporte tel quel dans Collection › Importer.');
 }
 
 export function update() { if (!root?.isConnected) return; selects(); body(); }

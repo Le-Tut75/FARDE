@@ -6,7 +6,7 @@ import { esc, eur, cardImg, num, toast, $ } from '../ui.js';
 let root;
 export function render(el) {
   el.innerHTML = `<section class="view">
-    <div class="vh"><div><h2>Wishlist</h2><p>Fixe un prix cible : la carte passe en alerte quand sa cote descend dessous${S.settings.telegram_chat_id ? ', et tu reçois un message Telegram' : ''}.</p></div></div>
+    <div class="vh"><div><h2>Wishlist</h2><p>Fixe un prix cible : la carte passe en alerte quand sa cote descend dessous${S.settings.telegram_chat_id ? ', et tu reçois un message Telegram' : ''}. Le badge rouge signale une carte en nette baisse sur un mois (rubrique Opportunités).</p></div></div>
     <div class="cards" id="wGrid"></div>
   </section>`;
   root = el.firstElementChild;
@@ -35,7 +35,7 @@ export function update() {
   });
   g.innerHTML = list.map((w) => {
     const p = wishPrice(w), hit = w.target_price != null && p != null && p <= Number(w.target_price);
-    return `<div class="tile" style="cursor:default"><div class="img" role="button" tabindex="0" data-open="${w.id}" style="cursor:pointer">${cardImg(w.image, w.name)}${hit ? '<span class="badge ok">Prix atteint</span>' : ''}</div>
+    return `<div class="tile" style="cursor:default"><div class="img" role="button" tabindex="0" data-open="${w.id}" style="cursor:pointer">${cardImg(w.image, w.name)}${hit ? '<span class="badge ok">Prix atteint</span>' : ''}${S.deals.get(w.card_id) ? `<span class="badge down" title="Cote nettement sous sa moyenne 30 jours (voir Opportunités)">${String(S.deals.get(w.card_id).drop_pct).replace('.', ',')} %</span>` : ''}</div>
       <div class="t1 ellip">${esc(w.name)}</div><div class="t2"><span class="ellip">${esc(w.set_name || '')} · ${esc(w.lang.toUpperCase())}${w.variant !== 'normal' ? ' · ' + esc(variantLabel(w.variant)) : ''}</span></div>
       <div class="t2"><span>Cote</span><b class="num ${hit ? 'gain' : ''}">${eur(p)}</b></div>
       <div class="row" style="gap:6px;flex-wrap:nowrap"><input type="number" min="0" step="0.5" inputmode="decimal" id="wt-${w.id}" data-target="${w.id}" value="${w.target_price ?? ''}" placeholder="Prix cible €" aria-label="Prix cible pour ${esc(w.name)}" style="padding:5px 8px">

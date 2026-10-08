@@ -1,9 +1,9 @@
 import { S, totals, calcLine, calcSealed } from '../store.js';
 import { openCard } from '../carddialog.js';
 import { sealedImg, sealedImage } from './sealed.js';
-import { esc, eur, signEur, pct, plClass, cardImg, lineChart, frDateTime, $ } from '../ui.js';
+import { esc, eur, signEur, pct, plClass, cardImg, lineChart, frDateTime, $, $$ } from '../ui.js';
 
-let root;
+let root, period = '7';
 export function render(el) {
   el.innerHTML = `<section class="view">
     <div class="vh"><div><h2>Portefeuille</h2><p id="dSub"></p></div><div class="status" id="dJob"></div></div>
@@ -11,19 +11,28 @@ export function render(el) {
       <div class="worth">
         <div><div class="lbl">Valeur totale</div><div class="big" id="dValue">0 €</div></div>
         <div class="split">
-          <div><span class="lbl">Investi</span><b id="dInv"></b></div>
+          <div><span class="lbl">Investi</span><b id="dInv"></b><span class="lbl small" id="dSpent"></span></div>
           <div><span class="lbl">Plus-value</span><b id="dPL"></b></div>
           <div><span class="lbl">Rendement</span><b id="dPct"></b></div>
         </div>
         <div class="split">
           <div><span class="lbl">Cartes</span><b id="dCards"></b></div>
           <div><span class="lbl">Scellés</span><b id="dSealed"></b></div>
-          <div><span class="lbl">Alertes wishlist</span><b id="dAlerts"></b></div>
+          <div><span class="lbl">Dont réalisée</span><b id="dReal"></b></div>
         </div>
       </div>
       <div class="panel chart"><div class="row between"><h3>Évolution de la valeur</h3><span class="muted small" id="dRange"></span></div><div id="dChart"></div></div>
     </div>
-    <div class="grid2">
+    <div class="welcome" id="dWelcome" hidden>
+      <div><h3>Bienvenue dans Farde</h3><p class="muted">Trois façons de remplir ta collection. Tu pourras toujours mélanger les trois.</p></div>
+      <div class="wgrid">
+        <a class="wbtn" href="#import"><svg><use href="#i-upload"/></svg><b>Importer mon tableur</b><span>Google Sheets, Excel ou CSV : tout est reconnu automatiquement.</span></a>
+        <a class="wbtn" href="#ajout?mode=scan"><svg><use href="#i-scan"/></svg><b>Scanner mes cartes</b><span>L’appareil photo lit le numéro en bas de la carte.</span></a>
+        <a class="wbtn" href="#catalogue"><svg><use href="#i-search"/></svg><b>Chercher une carte</b><span>Toutes les cartes, toutes les langues, avec leur cote.</span></a>
+      </div>
+    </div>
+    <div class="grid2" id="dGrid">
+      <div class="panel"><div class="row between" style="margin-bottom:8px"><h3>Variations de cote</h3><div class="tabs" id="dMovTabs"><button type="button" data-p="7" aria-pressed="true">7 jours</button><button type="button" data-p="30" aria-pressed="false">30 jours</button></div></div><div class="toplist" id="dVar"></div></div>
       <div class="panel"><h3 style="margin-bottom:8px">Cartes les plus cotées</h3><div class="toplist" id="dTop"></div></div>
       <div class="panel"><h3 style="margin-bottom:8px">Meilleures et pires plus-values</h3><div class="toplist" id="dMovers"></div></div>
       <div class="panel"><h3 style="margin-bottom:8px">Répartition par série</h3><div class="bars" id="dSets"></div></div>
@@ -32,6 +41,10 @@ export function render(el) {
   </section>`;
   root = el.firstElementChild;
   root.addEventListener('click', (e) => {
+    const tb = e.target.closest('#dMovTabs [data-p]');
+    if (tb) { period = tb.dataset.p; update(); return; }
+    const mv = e.target.closest('[data-mover]');
+    if (mv) { const [lang, id] = mv.dataset.mover.split('|'); const l = S.cards.find((c) => c.lang === lang && c.card_id === id); openCard(lang, id, l ? { line: l } : {}); return; }
     const it = e.target.closest('[data-card]');
     if (it) { const l = S.cards.find((c) => c.id === it.dataset.card); if (l) openCard(l.lang, l.card_id, { line: l }); }
   });
@@ -43,14 +56,20 @@ export function update() {
   const t = totals();
   $('#dValue', root).textContent = eur(t.value);
   $('#dInv', root).textContent = eur(t.invested);
+  $('#dSpent', root).innerHTML = t.spent ? `dont <a href="#depenses" style="color:inherit">${eur(t.spent)} de dépenses</a>` : '';
   const pl = $('#dPL', root); pl.textContent = signEur(t.pl); pl.className = t.pl >= 0 ? 'pos' : 'neg';
   const p = $('#dPct', root); p.textContent = t.invested ? pct(t.pct) : '—'; p.className = t.pl >= 0 ? 'pos' : 'neg';
   $('#dCards', root).textContent = t.count.toLocaleString('fr-FR');
   $('#dSealed', root).textContent = eur(t.sealedValue);
-  $('#dAlerts', root).textContent = t.alerts;
-  $('#dSub', root).textContent = S.cards.length || S.sealed.length
-    ? `${S.cards.length.toLocaleString('fr-FR')} lignes de cartes, ${S.sealed.length} scellé${S.sealed.length > 1 ? 's' : ''}${t.toCheck ? ` · ${t.toCheck} à coter à la main (1re édition, gradées, sans cote)` : ''}.`
-    : 'Ajoute des cartes depuis le Catalogue ou importe ton tableur pour démarrer.';
+  const re = $('#dReal', root);
+  re.innerHTML = t.salesCount ? `<a href="#ventes" style="color:inherit">${signEur(t.realized)}</a>` : '<a href="#ventes" style="color:inherit;font-weight:500" class="small">aucune vente</a>';
+  re.className = t.realized > 0 ? 'pos' : t.realized < 0 ? 'neg' : '';
+  const empty = !S.cards.length && !S.sealed.length && !S.sales.length;
+  $('#dWelcome', root).hidden = !empty; $('#dGrid', root).hidden = empty;
+  $('#dSub', root).innerHTML = !empty
+    ? `${S.cards.length.toLocaleString('fr-FR')} lignes de cartes, ${S.sealed.length} scellé${S.sealed.length > 1 ? 's' : ''}${t.toCheck ? ` · <a href="#collection?type=check">${t.toCheck} à coter à la main</a>` : ''}${t.alerts ? ` · <a href="#wishlist">${t.alerts} alerte${t.alerts > 1 ? 's' : ''} wishlist</a>` : ''}.`
+    : 'Ta collection est vide pour l’instant.';
+  drawVariations();
 
   const j = S.lastJob;
   $('#dJob', root).innerHTML = j
@@ -83,4 +102,20 @@ export function update() {
 
   const sl = S.sealed.map((s) => ({ s, c: calcSealed(s) })).sort((a, b) => (b.c.value || 0) - (a.c.value || 0)).slice(0, 6);
   $('#dSealedList', root).innerHTML = sl.length ? sl.map(({ s, c }) => `<a class="it" href="#scelles" style="color:inherit;text-decoration:none">${sealedImg(sealedImage(s), s.name, 'sthumb')}<div style="min-width:0"><div class="ellip">${esc(s.name)}</div><div class="muted small">${esc(s.category || '')} · ×${s.qty}</div></div><div class="num" style="text-align:right">${eur(c.value)}<div class="${plClass(c.pl)} small">${c.pl != null ? signEur(c.pl) : ''}</div></div></a>`).join('') : `<div class="empty">Aucun scellé. Ajoute tes displays et ETB dans l’onglet Scellés.</div>`;
+}
+
+/** Cartes de la collection dont la cote a le plus bougé (calculé chaque matin par la mise à jour). */
+function drawVariations() {
+  $$('#dMovTabs [data-p]', root).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.p === period)));
+  const key = period === '7' ? 'price7' : 'price30';
+  const rows = S.movers.filter((m) => m[key] != null && Number(m[key]) > 0 && m.price != null)
+    .map((m) => ({ m, chg: (Number(m.price) - Number(m[key])) / Number(m[key]) * 100, eu: (Number(m.price) - Number(m[key])) * (m.qty || 1) }))
+    .filter((x) => Math.abs(x.chg) >= 0.5);
+  const up = rows.filter((x) => x.eu > 0).sort((a, b) => b.eu - a.eu).slice(0, 4);
+  const down = rows.filter((x) => x.eu < 0).sort((a, b) => a.eu - b.eu).slice(0, 4);
+  const it = ({ m, chg, eu }) => `<div class="it" data-mover="${esc(m.lang)}|${esc(m.card_id)}">${cardImg(m.image, m.name, 'thumb')}<div style="min-width:0"><div class="ellip">${esc(m.name)} <span class="muted">${esc(m.local_id || '')}</span></div>
+    <div class="muted small ellip">${esc(m.set_name || '')} · ${eur(m[key])} → ${eur(m.price)}${m.qty > 1 ? ' · ×' + m.qty : ''}</div></div>
+    <div class="num ${plClass(chg)}" style="text-align:right">${pct(chg)}<div class="small">${signEur(eu)}</div></div></div>`;
+  $('#dVar', root).innerHTML = up.length || down.length ? [...up, ...down].map(it).join('')
+    : `<div class="empty">${S.cards.length ? `Les variations apparaissent après ${period} jours de suivi : la mise à jour du matin enregistre la cote de chaque carte.` : 'Ajoute des cartes pour suivre leurs variations.'}</div>`;
 }

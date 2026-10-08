@@ -1,5 +1,5 @@
 import { S } from '../store.js';
-import { getSetsNewestFirst, getSet, getCard } from '../tcgdex.js';
+import { getSetsNewestFirst, getSet, getCard, getSeriesGroups } from '../tcgdex.js';
 import { cmPrice } from '../valuation.js';
 import { openCard } from '../carddialog.js';
 import { esc, eur, cardImg, langOptions, frDate, pool, setPicker, $ } from '../ui.js';
@@ -22,7 +22,7 @@ export function render(el) {
   root = el.firstElementChild;
   $('#xShow', root).value = st.show;
   $('#xLang', root).onchange = () => { st.lang = $('#xLang', root).value; st.set = ''; fill(); };
-  setPicker($('#xSet', root), () => getSetsNewestFirst(st.lang), (s) => { if (s) { st.set = s.id; load(); } }, { allLabel: 'Tape le nom d’une série…' });
+  setPicker($('#xSet', root), () => getSeriesGroups(st.lang), (s) => { if (s) { st.set = s.id; load(); } }, { allLabel: 'Tape le nom d’une série…' });
   $('#xShow', root).onchange = () => { st.show = $('#xShow', root).value; load(); };
   $('#xGrid', root).addEventListener('click', (e) => { const b = e.target.closest('.c[data-id]'); if (b) openCard(st.lang, b.dataset.id); });
   fill();

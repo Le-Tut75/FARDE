@@ -10,8 +10,20 @@ import * as sets from './views/sets.js';
 import * as sealed from './views/sealed.js';
 import * as wishlist from './views/wishlist.js';
 import * as settings from './views/settings.js';
+import * as expenses from './views/expenses.js';
+import * as opportunities from './views/opportunities.js';
+import * as sales from './views/sales.js';
+import * as quickadd from './views/quickadd.js';
+import { openSearch } from './search.js';
 
-const ROUTES = { portefeuille: dashboard, catalogue, collection, import: importView, fardes: binders, series: sets, scelles: sealed, wishlist, reglages: settings };
+const ROUTES = { portefeuille: dashboard, catalogue, collection, import: importView, fardes: binders, series: sets, scelles: sealed, wishlist, reglages: settings, depenses: expenses, opportunites: opportunities, ventes: sales, ajout: quickadd };
+// Sous-sections : une seule entrée dans le menu, des onglets en haut de la page
+const GROUPS = {
+  portefeuille: [['portefeuille', 'Résumé'], ['ventes', 'Ventes'], ['depenses', 'Dépenses']],
+  collection: [['collection', 'Liste'], ['fardes', 'Fardes'], ['series', 'Complétion'], ['ajout', 'Ajout rapide'], ['import', 'Importer']],
+};
+const PARENT = {};
+for (const [g, items] of Object.entries(GROUPS)) for (const [k] of items) PARENT[k] = g;
 let current = null;
 
 settings.applyTheme();
@@ -20,18 +32,24 @@ function show(id) {
   for (const s of ['boot', 'auth', 'app']) $('#' + s).hidden = s !== id;
 }
 
-const MORE = ['wishlist', 'fardes', 'series', 'import', 'reglages'];
-const TITLES = { portefeuille: 'Portefeuille', catalogue: 'Catalogue', collection: 'Collection', import: 'Import', fardes: 'Fardes', series: 'Séries', scelles: 'Scellés', wishlist: 'Wishlist', reglages: 'Réglages' };
+const MORE = ['wishlist', 'reglages', 'opportunites'];
+const TITLES = { portefeuille: 'Portefeuille', catalogue: 'Catalogue', collection: 'Collection', import: 'Import', fardes: 'Fardes', series: 'Séries', scelles: 'Scellés', wishlist: 'Wishlist', reglages: 'Réglages', depenses: 'Dépenses', opportunites: 'Opportunités', ventes: 'Ventes', ajout: 'Ajout rapide' };
 function route() {
   const name = (location.hash || '#portefeuille').slice(1).split('?')[0];
   const key = ROUTES[name] ? name : 'portefeuille';
   const view = ROUTES[key];
+  // L'ajout rapide a sa propre entrée dans le menu, mais vit dans la Collection
+  const top = key === 'ajout' ? 'ajout' : PARENT[key] || key;
   $$('[data-route]').forEach((a) => {
-    const on = a.dataset.route === key || (a.dataset.route === 'plus' && MORE.includes(key));
+    const on = a.dataset.route === top || (a.dataset.route === 'collection' && key === 'ajout' && !$('#nav').offsetParent) || (a.dataset.route === 'plus' && MORE.includes(key));
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
+  const sub = $('#subnav'), g = GROUPS[PARENT[key]];
+  sub.hidden = !g;
+  sub.innerHTML = g ? g.map(([k, lab]) => `<a href="#${k}" ${k === key ? 'aria-current="page"' : ''}>${lab}</a>`).join('') : '';
   closeSheet();
   closeDialog();
+  current?.leave?.();
   current = view;
   view.render($('#view'));
   document.title = key === 'portefeuille' ? 'Farde' : `${TITLES[key]} · Farde`;
@@ -42,7 +60,13 @@ function route() {
 function closeSheet() { $('#moreSheet').hidden = true; $('#moreBtn').setAttribute('aria-expanded', 'false'); }
 $('#moreBtn').onclick = () => { const s = $('#moreSheet'); s.hidden = !s.hidden; $('#moreBtn').setAttribute('aria-expanded', String(!s.hidden)); };
 $('#moreSheet').onclick = (e) => { if (e.target.id === 'moreSheet') closeSheet(); };
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSheet();
+  // « / » ou Ctrl+K : recherche globale
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '') || document.activeElement?.isContentEditable;
+  if (!$('#app').hidden && ((e.key === '/' && !typing) || (e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)))) { e.preventDefault(); closeSheet(); openSearch(); }
+});
+document.addEventListener('click', (e) => { if (e.target.closest('[data-gsearch]')) { closeSheet(); openSearch(); } });
 
 function header() {
   const t = totals();
