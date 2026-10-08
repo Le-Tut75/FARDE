@@ -1,5 +1,6 @@
 import { S, totals, calcLine, calcSealed } from '../store.js';
 import { openCard } from '../carddialog.js';
+import { sealedImg, sealedImage } from './sealed.js';
 import { esc, eur, signEur, pct, plClass, cardImg, lineChart, frDateTime, $ } from '../ui.js';
 
 let root;
@@ -48,7 +49,7 @@ export function update() {
   $('#dSealed', root).textContent = eur(t.sealedValue);
   $('#dAlerts', root).textContent = t.alerts;
   $('#dSub', root).textContent = S.cards.length || S.sealed.length
-    ? `${S.cards.length.toLocaleString('fr-FR')} lignes de cartes, ${S.sealed.length} scellé${S.sealed.length > 1 ? 's' : ''}${t.unpriced ? ` · ${t.unpriced} carte${t.unpriced > 1 ? 's' : ''} sans cote` : ''}.`
+    ? `${S.cards.length.toLocaleString('fr-FR')} lignes de cartes, ${S.sealed.length} scellé${S.sealed.length > 1 ? 's' : ''}${t.toCheck ? ` · ${t.toCheck} à coter à la main (1re édition, gradées, sans cote)` : ''}.`
     : 'Ajoute des cartes depuis le Catalogue ou importe ton tableur pour démarrer.';
 
   const j = S.lastJob;
@@ -81,5 +82,5 @@ export function update() {
   $('#dSets', root).innerHTML = arr.length ? arr.map(([k, v]) => `<div class="b"><div style="min-width:0"><div class="ellip">${esc(k)}</div><div class="track"><i style="width:${Math.max(2, (v / mx) * 100)}%"></i></div></div><div class="num" style="text-align:right">${eur(v)}</div></div>`).join('') : `<div class="empty">Rien à répartir.</div>`;
 
   const sl = S.sealed.map((s) => ({ s, c: calcSealed(s) })).sort((a, b) => (b.c.value || 0) - (a.c.value || 0)).slice(0, 6);
-  $('#dSealedList', root).innerHTML = sl.length ? sl.map(({ s, c }) => `<a class="it" href="#scelles" style="color:inherit;text-decoration:none"><div class="thumb ph"></div><div style="min-width:0"><div class="ellip">${esc(s.name)}</div><div class="muted small">${esc(s.category || '')} · ×${s.qty}</div></div><div class="num" style="text-align:right">${eur(c.value)}<div class="${plClass(c.pl)} small">${c.pl != null ? signEur(c.pl) : ''}</div></div></a>`).join('') : `<div class="empty">Aucun scellé. Ajoute tes displays et ETB dans l’onglet Scellés.</div>`;
+  $('#dSealedList', root).innerHTML = sl.length ? sl.map(({ s, c }) => `<a class="it" href="#scelles" style="color:inherit;text-decoration:none">${sealedImg(sealedImage(s), s.name, 'sthumb')}<div style="min-width:0"><div class="ellip">${esc(s.name)}</div><div class="muted small">${esc(s.category || '')} · ×${s.qty}</div></div><div class="num" style="text-align:right">${eur(c.value)}<div class="${plClass(c.pl)} small">${c.pl != null ? signEur(c.pl) : ''}</div></div></a>`).join('') : `<div class="empty">Aucun scellé. Ajoute tes displays et ETB dans l’onglet Scellés.</div>`;
 }

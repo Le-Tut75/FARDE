@@ -1,5 +1,5 @@
 import { S, calcLine, deleteCards, moveCards } from '../store.js';
-import { VARIANTS } from '../valuation.js';
+import { variantLabel } from '../valuation.js';
 import { openCard } from '../carddialog.js';
 import { esc, eur, signEur, pct, plClass, cardImg, LANGS, toast, download, toCsv, csvNum, today, confirmButton, $, $$ } from '../ui.js';
 
@@ -14,7 +14,7 @@ export function render(el) {
       <div class="field" style="flex:2 1 200px"><label for="kQ">Filtrer</label><input id="kQ" type="search" placeholder="Nom, série, numéro…" value="${esc(st.q)}"></div>
       <div class="field" style="flex:1 1 120px"><label for="kLang">Langue</label><select id="kLang"></select></div>
       <div class="field" style="flex:1 1 140px"><label for="kBind">Farde</label><select id="kBind"></select></div>
-      <div class="field" style="flex:1 1 130px"><label for="kType">Type</label><select id="kType"><option value="">Tout</option><option value="raw">Non gradées</option><option value="graded">Gradées</option><option value="noprice">Sans cote</option><option value="nobuy">Sans prix d’achat</option></select></div>
+      <div class="field" style="flex:1 1 130px"><label for="kType">Type</label><select id="kType"><option value="">Tout</option><option value="raw">Non gradées</option><option value="graded">Gradées</option><option value="noprice">Sans cote</option><option value="nobuy">Sans prix d’achat</option><option value="check">À coter</option></select></div>
     </div>
     <div class="tw"><table class="resp" id="kTable"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="kAll" aria-label="Tout sélectionner"></th><th></th><th data-s="name">Carte</th><th data-s="set">Série</th><th data-s="lang">Lang.</th><th data-s="cond">État</th>
@@ -76,6 +76,7 @@ function filtered() {
     if (st.type === 'raw' && l.grading_company) return false;
     if (st.type === 'noprice' && calcLine(l).value != null) return false;
     if (st.type === 'nobuy' && l.buy_price != null) return false;
+    if (st.type === 'check' && !calcLine(l).toCheck) return false;
     return true;
   });
 }
@@ -93,7 +94,7 @@ function body() {
   }
   const shown = rows.slice(0, st.limit);
   tb.innerHTML = shown.map(({ l, c }) => {
-    const tags = `${l.variant !== 'normal' ? esc(VARIANTS[l.variant] || l.variant) : ''}${l.grading_company ? ` <span class="pill acc">${esc(l.grading_company)} ${esc(l.grade || '')}</span>` : ''}${l.manual_price != null ? ' <span class="pill">cote manuelle</span>' : ''}`;
+    const tags = `${l.variant !== 'normal' ? esc(variantLabel(l.variant)) : ''}${c.toCheck ? ' <span class="pill al" title="Cardmarket ne cote pas cette version à part : saisis une cote manuelle">à coter</span>' : ''}${l.grading_company ? ` <span class="pill acc">${esc(l.grading_company)} ${esc(l.grade || '')}</span>` : ''}${l.manual_price != null ? ' <span class="pill">cote manuelle</span>' : ''}`;
     return `<tr data-id="${l.id}" style="cursor:pointer">
     <td class="c-chk"><input type="checkbox" data-sel="${l.id}" ${st.sel.has(l.id) ? 'checked' : ''} aria-label="Sélectionner"></td>
     <td class="c-img">${cardImg(l.image, l.name, 'thumb')}</td>
@@ -123,7 +124,7 @@ function exportCsv() {
   const H = ['Nom', 'Numéro', 'Série', 'Langue', 'Variante', 'État', 'Gradation', 'Quantité', "Prix d'achat unitaire", "Date d'achat", 'Cote unitaire', 'Valeur', 'Plus-value', 'Farde', 'Notes', 'ID TCGdex'];
   const rows = filtered().map((l) => {
     const c = calcLine(l);
-    return [l.name, l.local_id, l.set_name, l.lang, VARIANTS[l.variant] || l.variant, l.condition, l.grading_company ? `${l.grading_company} ${l.grade || ''}` : '',
+    return [l.name, l.local_id, l.set_name, l.lang, variantLabel(l.variant), l.condition, l.grading_company ? `${l.grading_company} ${l.grade || ''}` : '',
       l.qty, csvNum(l.buy_price), l.buy_date, csvNum(c.unit), csvNum(c.value), csvNum(c.pl), S.binders.find((b) => b.id === l.binder_id)?.name || '', l.notes, l.card_id];
   });
   download(`farde-collection-${today()}.csv`, toCsv(H, rows), 'text/csv;charset=utf-8');

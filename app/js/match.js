@@ -121,8 +121,16 @@ export function parseGrading(text) {
 
 export function parseVariant(text) {
   const t = norm(text);
+  const ball = t.match(/\b(poke ?ball|pokeball|master ?ball|masterball|love ?ball|dusk ?ball|sombre ball|quick ?ball|rapide ball|friend ?ball|copain ball)\b/);
+  if (ball) {
+    const b = ball[1].replace(/\s/g, '');
+    const map = { pokeball: 'pokeball', masterball: 'masterball', loveball: 'loveball', duskball: 'duskball', sombreball: 'duskball', quickball: 'quickball', rapideball: 'quickball', friendball: 'friendball', copainball: 'friendball' };
+    return `reverse:${map[b] || b}`;
+  }
+  if (/\b(1st|1ere|1re|premiere|first|ed1|edition 1|ed 1)\b/.test(t)) return /\bshadowless\b/.test(t) ? 'holo-shadowless+1st-edition' : 'firstEdition';
+  if (/\bshadowless\b/.test(t)) return 'holo-shadowless';
+  if (/\bcosmos\b/.test(t)) return 'holo:cosmos';
   if (/\b(reverse|rev|revers|reverse holo)\b/.test(t)) return 'reverse';
-  if (/\b(1st|1ere|1re|premiere|first|ed1|edition 1)\b/.test(t)) return 'firstEdition';
   if (/\b(holo|holographique|foil)\b/.test(t)) return 'holo';
   if (/\b(normal|normale|non holo|standard)\b/.test(t)) return 'normal';
   return null;
@@ -135,7 +143,7 @@ export function cleanName(raw) {
   const variant = parseVariant(s);
   s = s.replace(/\b(PSA|CGC|BGS|PCA|SGC|ACE|Collect\s*Aura)\s*[-:]?\s*\d{1,2}(?:[.,]5)?\b/gi, ' ')
     .replace(/\((?:[^)]*)\)|\[(?:[^\]]*)\]/g, ' ')
-    .replace(/\b(reverse holo|reverse|rev|holo|foil|1st edition|1ere edition|1re edition|edition 1|ed1|sar|sir|ar|ur|ir|chr|csr|fa|full art|alt art|secret|promo|gold|rainbow)\b/gi, ' ')
+    .replace(/\b(reverse holo|reverse|rev|holo|foil|1st edition|1ere edition|1re edition|edition 1|ed1|shadowless|cosmos|pok[eé] ?ball|master ?ball|love ?ball|dusk ?ball|quick ?ball|friend ?ball|sar|sir|ar|ur|ir|chr|csr|fa|full art|alt art|secret|promo|gold|rainbow)\b/gi, ' ')
     .replace(/\s+/g, ' ').trim();
   return { name: s, variant, grading };
 }

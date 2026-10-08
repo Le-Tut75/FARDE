@@ -121,7 +121,7 @@ export function lineChart(rows, series, { height = 230, label = 'Évolution' } =
   const dl = (d) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   const id = 'g' + Math.random().toString(36).slice(2, 7);
   let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>`;
-  svg += ticks.map((v) => `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${P.l - 8}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono,monospace">${fk(v)}</text>`).join('');
+  svg += ticks.map((v) => `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${P.l - 8}" y="${Y(v) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${fk(v)}</text>`).join('');
   for (const s of series) {
     const p = path(s.key);
     if (!p) continue;
@@ -132,4 +132,73 @@ export function lineChart(rows, series, { height = 230, label = 'Évolution' } =
   if (last) svg += `<circle cx="${X(last.d)}" cy="${Y(Number(last[main.key]))}" r="4.5" fill="${main.color}" stroke="var(--surface)" stroke-width="2"/>`;
   svg += `<text x="${P.l}" y="${H - 8}" font-size="11" fill="var(--muted)">${dl(pts[0].d)}</text><text x="${W - P.r}" y="${H - 8}" font-size="11" fill="var(--muted)" text-anchor="end">${dl(pts.at(-1).d)}</text></svg>`;
   return svg;
+}
+
+/**
+ * Liste de suggestions sous un champ de saisie (souris, clavier, tactile).
+ * source(q) -> Promise<items> ; render(item) -> HTML ; onPick(item)
+ */
+export function combo(input, { source, render, onPick, minChars = 0, debounce = 200, empty = 'Aucun résultat', footer = null }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'combo';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const list = document.createElement('div');
+  list.className = 'combo-list'; list.hidden = true; list.setAttribute('role', 'listbox');
+  list.id = (input.id || 'c') + '-list';
+  wrap.appendChild(list);
+  input.setAttribute('autocomplete', 'off'); input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-expanded', 'false'); input.setAttribute('aria-controls', list.id);
+  let items = [], active = -1, timer, seq = 0, loading = false;
+  const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); active = -1; };
+  const draw = () => {
+    const foot = footer ? footer(input.value.trim(), items) : '';
+    list.innerHTML = loading ? '<div class="combo-empty"><span class="spin"></span></div>'
+      : (items.length ? items.map((it, i) => `<div class="combo-item" role="option" id="${list.id}-${i}" data-i="${i}" aria-selected="${i === active}">${render(it)}</div>`).join('') : `<div class="combo-empty">${esc(empty)}</div>`) + (foot || '');
+    list.hidden = false; input.setAttribute('aria-expanded', 'true');
+    if (active >= 0) { input.setAttribute('aria-activedescendant', `${list.id}-${active}`); list.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }
+    else input.removeAttribute('aria-activedescendant');
+  };
+  const run = async () => {
+    const q = input.value.trim();
+    if (q.length < minChars) { close(); return; }
+    const my = ++seq; loading = true; draw();
+    let r = [];
+    try { r = await source(q); } catch { r = []; }
+    if (my !== seq) return;
+    loading = false; items = r || []; active = -1;
+    if (document.activeElement === input) draw();
+  };
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, debounce); });
+  input.addEventListener('focus', () => { if (minChars === 0 || input.value.trim().length >= minChars) run(); });
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) { if (e.key === 'ArrowDown') run(); return; }
+    if (e.key === 'ArrowDown') { active = Math.min(items.length - 1, active + 1); draw(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { active = Math.max(-1, active - 1); draw(); e.preventDefault(); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); pick(active); }
+    else if (e.key === 'Escape') close();
+  });
+  list.addEventListener('mousedown', (e) => { if (e.target.closest('.combo-item, [data-keep]')) e.preventDefault(); });
+  list.addEventListener('click', (e) => { const el = e.target.closest('[data-i]'); if (el) pick(+el.dataset.i); });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+  function pick(i) { const it = items[i]; close(); clearTimeout(timer); seq++; onPick(it); }
+  return { close, refresh: run, list };
+}
+
+/** Champ « série » filtrable : tape quelques lettres, choisis dans la liste. */
+export function setPicker(input, getSets, onPick, { allLabel = 'Toutes les séries' } = {}) {
+  const fold = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  input.placeholder = allLabel;
+  const c = combo(input, {
+    source: async (q) => {
+      const sets = await getSets();
+      const f = fold(q);
+      const list = f ? sets.filter((s) => fold(s.name).includes(f) || fold(s.id).includes(f)) : sets;
+      return [{ id: '', name: allLabel }, ...list.slice(0, 80)];
+    },
+    render: (s) => s.id ? `<span class="ellip" style="flex:1">${esc(s.name)}</span><span class="muted small num">${s.cardCount?.official ?? ''}</span>` : `<span class="muted">${esc(s.name)}</span>`,
+    onPick: (s) => { input.value = s.id ? s.name : ''; onPick(s.id ? s : null); },
+  });
+  input.addEventListener('change', () => { if (!input.value.trim()) onPick(null); });
+  return c;
 }

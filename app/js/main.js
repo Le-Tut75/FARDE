@@ -20,24 +20,35 @@ function show(id) {
   for (const s of ['boot', 'auth', 'app']) $('#' + s).hidden = s !== id;
 }
 
+const MORE = ['wishlist', 'fardes', 'series', 'import', 'reglages'];
+const TITLES = { portefeuille: 'Portefeuille', catalogue: 'Catalogue', collection: 'Collection', import: 'Import', fardes: 'Fardes', series: 'Séries', scelles: 'Scellés', wishlist: 'Wishlist', reglages: 'Réglages' };
 function route() {
   const name = (location.hash || '#portefeuille').slice(1).split('?')[0];
-  const view = ROUTES[name] || dashboard;
   const key = ROUTES[name] ? name : 'portefeuille';
-  $$('#nav a').forEach((a) => a.toggleAttribute('aria-current', false));
-  const link = $(`#nav a[href="#${key}"]`);
-  if (link) { link.setAttribute('aria-current', 'page'); link.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+  const view = ROUTES[key];
+  $$('[data-route]').forEach((a) => {
+    const on = a.dataset.route === key || (a.dataset.route === 'plus' && MORE.includes(key));
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+  closeSheet();
   closeDialog();
   current = view;
   view.render($('#view'));
-  document.title = key === 'portefeuille' ? 'Farde' : `${link?.textContent || ''} · Farde`;
+  document.title = key === 'portefeuille' ? 'Farde' : `${TITLES[key]} · Farde`;
   scrollTo(0, 0);
 }
 
+// Menu « Plus » (téléphone)
+function closeSheet() { $('#moreSheet').hidden = true; $('#moreBtn').setAttribute('aria-expanded', 'false'); }
+$('#moreBtn').onclick = () => { const s = $('#moreSheet'); s.hidden = !s.hidden; $('#moreBtn').setAttribute('aria-expanded', String(!s.hidden)); };
+$('#moreSheet').onclick = (e) => { if (e.target.id === 'moreSheet') closeSheet(); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+
 function header() {
   const t = totals();
-  $('#hdrValue').textContent = eur(t.value);
-  $('#hdrPL').innerHTML = t.invested ? `<span class="${plClass(t.pl)}">${signEur(t.pl)} · ${pct(t.pct)}</span>` : '';
+  const pl = t.invested ? `<span class="${plClass(t.pl)}">${signEur(t.pl)} (${pct(t.pct)})</span>` : '';
+  $('#hdrValue').textContent = eur(t.value); $('#hdrPL').innerHTML = pl;
+  $('#hdrValueM').textContent = eur(t.value); $('#hdrPLM').innerHTML = pl;
   const off = $('#offline');
   off.hidden = !S.offline;
   if (S.offline) off.textContent = `Hors ligne : affichage des données du ${new Date(S.loadedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}, en lecture seule.`;

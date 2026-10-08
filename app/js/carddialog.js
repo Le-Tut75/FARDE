@@ -1,7 +1,7 @@
 // Fiche d'une carte : cotes, historique, ajout ou modification d'une ligne de collection.
-import { S, addCard, updateCard, deleteCards, addWish, calcLine, priceHistory, ownedQty, cmOf } from './store.js';
+import { S, addCard, updateCard, deleteCards, addWish, priceHistory, ownedQty, cmOf, priceOf, ensurePriceRow } from './store.js';
 import { getCard } from './tcgdex.js';
-import { CONDITIONS, VARIANTS, lineCalc, cardKey } from './valuation.js';
+import { CONDITIONS, VARIANTS, lineCalc, cardKey, variantLabel, isFirstEdition, resolveCm } from './valuation.js';
 import { esc, eur, usd, signEur, plClass, openDialog, closeDialog, toast, num, today, LANGS, cardImg, lineChart, confirmButton, $ } from './ui.js';
 
 const GRADERS = ['PSA', 'CGC', 'BGS', 'PCA', 'Collect Aura', 'SGC', 'Autre'];
@@ -13,7 +13,7 @@ const GRADERS = ['PSA', 'CGC', 'BGS', 'PCA', 'Collect Aura', 'SGC', 'Autre'];
 export async function openCard(lang, cardId, opts = {}) {
   openDialog(`<div class="mbody" style="align-items:center;padding:48px"><span class="spin"></span></div>`);
   let c = null;
-  try { c = await getCard(lang, cardId); } catch (e) { /* hors ligne : on utilise ce qu'on a */ }
+  try { [c] = await Promise.all([getCard(lang, cardId), ensurePriceRow(lang, cardId).catch(() => {})]); } catch (e) { /* hors ligne : on utilise ce qu'on a */ }
   const line = opts.line || null;
   if (!c && !line) {
     openDialog(`<div class="mbody"><p class="loss">Impossible de charger cette carte. Vérifie ta connexion puis réessaie.</p><div class="row end"><button class="btn" data-close>Fermer</button></div></div>`);
@@ -22,14 +22,29 @@ export async function openCard(lang, cardId, opts = {}) {
   c = c || { id: cardId, name: line.name, image: line.image, localId: line.local_id, set: { id: line.set_id, name: line.set_name, total: line.set_total }, variants: null, cm: null };
   const cm = c.cm || cmOf(lang, cardId);
   const tp = c.tcgplayer || S.prices.get(cardKey(lang, cardId))?.tcgplayer;
-  const variants = c.variants ? Object.keys(VARIANTS).filter((k) => c.variants[k]) : ['normal'];
-  if (!variants.length) variants.push('normal');
+  // Toutes les versions connues de la carte (TCGdex), avec leur cote quand elle est propre
+  const vrows = priceOf(lang, cardId).variants;
+  const pinput = { cm, variants: vrows };
+  const vopts = new Map();
+  for (const v of c.vd || []) if (!vopts.has(v.key)) vopts.set(v.key, variantLabel(v.key));
+  if (!vopts.size && c.variants) for (const k of Object.keys(VARIANTS)) if (c.variants[k]) vopts.set(k, VARIANTS[k]);
+  if (!vopts.size) vopts.set('normal', 'Normale');
+  const firstKey = [...vopts.keys()][0];
   const L = line || {
-    variant: variants.includes('holo') && !variants.includes('normal') ? 'holo' : variants[0], condition: 'NM', qty: 1,
+    variant: vopts.has('normal') ? 'normal' : firstKey, condition: 'NM', qty: 1,
     buy_price: null, buy_date: today(), binder_id: S.binders[0]?.id || null, grading_company: null, grade: null, manual_price: null, notes: null,
     ...(opts.prefill || {}),
   };
-  if (L.variant && !variants.includes(L.variant)) variants.push(L.variant);
+  const isOther = L.variant?.startsWith('other:');
+  if (L.variant && !isOther && !vopts.has(L.variant)) vopts.set(L.variant, variantLabel(L.variant));
+  // Prix affiché à côté d'une version seulement s'il lui correspond vraiment
+  const optPrice = (k) => {
+    if (isFirstEdition(k) || ((k.includes(':') || k.includes('+')) && !resolveCm(pinput, k).own)) return '';
+    const r = lineCalc({ variant: k, qty: 1, condition: 'NM' }, pinput, S.settings);
+    return r.unit != null ? ` — ${eur(r.unit)}` : '';
+  };
+  const variantOptions = [...vopts].map(([k, lab]) => `<option value="${esc(k)}" ${k === L.variant ? 'selected' : ''}>${esc(lab)}${optPrice(k)}</option>`).join('')
+    + `<option value="__other" ${isOther ? 'selected' : ''}>Autre version…</option>`;
   const own = ownedQty(lang, cardId);
   const inWish = S.wish.find((w) => w.lang === lang && w.card_id === cardId);
   const P = (k, lab) => (cm && cm[k] != null ? `<div><span>${lab}</span><b>${eur(cm[k])}</b></div>` : '');
@@ -54,7 +69,8 @@ export async function openCard(lang, cardId, opts = {}) {
     <form id="cdForm" class="panel stack" style="background:var(--sunk)">
       <h3>${line ? 'Modifier la ligne' : 'Ajouter à la collection'}</h3>
       <div class="fgrid">
-        <div class="field"><label for="fVar">Variante</label><select id="fVar">${variants.map((k) => `<option value="${k}" ${k === L.variant ? 'selected' : ''}>${VARIANTS[k] || k}</option>`).join('')}</select></div>
+        <div class="field" style="grid-column:span 2"><label for="fVar">Version</label><select id="fVar">${variantOptions}</select>
+          <input id="fVarOther" type="text" placeholder="Ex. tampon avant-première, erreur d’impression…" value="${esc(isOther ? L.variant.slice(6) : '')}" ${isOther ? '' : 'hidden'} style="margin-top:6px"></div>
         <div class="field"><label for="fCond">État</label><select id="fCond">${CONDITIONS.map(([k, n]) => `<option value="${k}" ${k === L.condition ? 'selected' : ''}>${k} · ${n}</option>`).join('')}</select></div>
         <div class="field"><label for="fQty">Quantité</label><input id="fQty" type="number" min="1" max="9999" step="1" value="${L.qty}" required></div>
         <div class="field"><label for="fBuy">Prix d'achat unitaire (€)</label><input id="fBuy" type="number" min="0" step="0.01" inputmode="decimal" value="${L.buy_price ?? ''}" placeholder="0,00"></div>
@@ -72,16 +88,23 @@ export async function openCard(lang, cardId, opts = {}) {
   </div></div></div>`);
 
   const read = () => ({
-    variant: $('#fVar', d).value, condition: $('#fCond', d).value,
+    variant: $('#fVar', d).value === '__other' ? (`other:${$('#fVarOther', d).value.trim() || 'Autre'}`) : $('#fVar', d).value, condition: $('#fCond', d).value,
     qty: Math.min(9999, Math.max(1, parseInt($('#fQty', d).value, 10) || 1)),
     buy_price: num($('#fBuy', d).value), buy_date: $('#fDate', d).value || null, binder_id: $('#fBind', d).value || null,
     grading_company: $('#fGc', d).value || null, grade: $('#fGc', d).value ? ($('#fGg', d).value.trim() || null) : null,
     manual_price: num($('#fMan', d).value), notes: $('#fNotes', d).value.trim() || null,
   });
   const prev = () => {
-    const r = lineCalc({ ...read(), lang, card_id: cardId }, cm, S.settings);
+    const data = read();
+    $('#fVarOther', d).hidden = $('#fVar', d).value !== '__other';
+    const r = lineCalc({ ...data, lang, card_id: cardId }, pinput, S.settings);
+    const own = resolveCm(pinput, data.variant).own;
+    const hint = isFirstEdition(data.variant) && data.manual_price == null ? ' · <span class="warn">Cardmarket ne cote pas la 1re édition à part : saisis une cote manuelle (ventes eBay).</span>'
+      : r.source === 'brut' ? ' · <span class="warn">cote non gradée : saisis la cote de la gradée.</span>'
+      : own ? ' · cote propre à cette version'
+      : data.variant.includes(':') && !own ? ' · cote exacte de cette version dès la prochaine mise à jour du matin' : '';
     $('#fPrev', d).innerHTML = r.value != null
-      ? `Valeur ${eur(r.value)}${r.pl != null ? ` · P&amp;L <b class="${plClass(r.pl)}">${signEur(r.pl)}</b>` : ''}${r.source === 'brut' ? ' · cote non gradée, saisis la cote de la gradée' : ''}`
+      ? `Valeur ${eur(r.value)}${r.pl != null ? ` · P&amp;L <b class="${plClass(r.pl)}">${signEur(r.pl)}</b>` : ''}${hint}`
       : 'Pas de cote : saisis une cote manuelle.';
   };
   $('#cdForm', d).addEventListener('input', prev); prev();
@@ -109,16 +132,17 @@ export async function openCard(lang, cardId, opts = {}) {
   if (wb) wb.onclick = async () => {
     if (inWish) { closeDialog(); location.hash = '#wishlist'; return; }
     try {
-      await addWish({ lang, card_id: cardId, name: c.name, local_id: c.localId, set_name: c.set?.name || null, image: c.image || null, variant: $('#fVar', d).value });
+      await addWish({ lang, card_id: cardId, name: c.name, local_id: c.localId, set_name: c.set?.name || null, image: c.image || null, variant: read().variant });
       wb.textContent = 'Dans la wishlist'; toast('Ajoutée à la wishlist. Fixe ton prix cible dans l’onglet Wishlist.');
     } catch (err) { toast(err.message, 5000); }
   };
 
   // Historique (tâche quotidienne)
   try {
-    const h = await priceHistory(`card:${lang}:${cardId}`);
+    const vkey = line?.variant || L.variant;
+    const h = await priceHistory(resolveCm(pinput, vkey).own ? `card:${lang}:${cardId}~${vkey}` : `card:${lang}:${cardId}`);
     const el = $('#cdChart', d); if (!el) return;
-    const foil = (line?.variant || L.variant) === 'reverse';
+    const foil = String(vkey).startsWith('reverse') && !resolveCm(pinput, vkey).own;
     const rows = h.map((r) => ({ d: r.d, v: foil ? (r.trend_holo ?? r.trend) : (r.trend ?? r.trend_holo) }));
     const svg = lineChart(rows, [{ key: 'v', color: 'var(--accent)', area: true }], { height: 160, label: 'Historique de la cote' });
     el.innerHTML = svg ? `<div class="lbl">Cote tendance depuis le début du suivi</div>${svg}` : `<p class="note">L’historique se construit chaque matin à partir du moment où la carte est dans ta collection ou ta wishlist.</p>`;

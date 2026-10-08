@@ -1,5 +1,6 @@
 // Client du catalogue TCGdex (gratuit, sans clé) avec cache local.
 import { norm } from './match.js';
+import { variantKey } from './valuation.js';
 
 export const API = 'https://api.tcgdex.net/v2';
 const DAY = 864e5;
@@ -86,6 +87,7 @@ function slimCard(c) {
     illustrator: c.illustrator || null, variants: c.variants || null,
     set: c.set ? { id: c.set.id, name: c.set.name, total: c.set.cardCount?.official ?? c.set.cardCount?.total ?? null } : null,
     cm: c.pricing?.cardmarket || null, tcgplayer: c.pricing?.tcgplayer || null,
+    vd: Array.isArray(c.variants_detailed) ? c.variants_detailed.map((v) => ({ key: variantKey(v), cmId: v?.thirdParty?.cardmarket ?? null })) : null,
   };
 }
 /** Fiche complète d'une carte (prix inclus), cache 24 h. */

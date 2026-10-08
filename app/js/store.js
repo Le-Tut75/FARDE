@@ -1,13 +1,15 @@
 // Données de l'utilisateur (Supabase) + cotes, avec copie locale pour le mode hors ligne.
 import { createClient } from './vendor/supabase.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
-import { DEFAULT_SETTINGS, DEFAULT_COND, cardKey, portfolio, lineCalc, sealedCalc, parisDay, cmPrice } from './valuation.js';
+import { DEFAULT_SETTINGS, DEFAULT_COND, cardKey, portfolio, lineCalc, sealedCalc, parisDay, cmPrice, resolveCm } from './valuation.js';
 import { getCard } from './tcgdex.js';
 import { pool } from './ui.js';
 
-export const configured = !!(SUPABASE_URL && SUPABASE_ANON_KEY && /^https?:\/\//.test(SUPABASE_URL));
+// On ne garde que https://xxxx.supabase.co, même si l'adresse copiée contient /rest/v1 ou un / final
+const BASE_URL = (() => { try { return new URL(SUPABASE_URL).origin; } catch { return ''; } })();
+export const configured = !!(BASE_URL && SUPABASE_ANON_KEY);
 export const sb = configured
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'farde.auth' } })
+  ? createClient(BASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'farde.auth' } })
   : null;
 
 export const S = {
@@ -168,16 +170,28 @@ export function cmOf(lang, cardId) {
   if (p?.cm && Date.now() - new Date(p.updated_at).getTime() < 3 * 864e5) return p.cm;
   return S.live.get(k)?.cm || p?.cm || null;
 }
-export const calcLine = (l) => lineCalc(l, cmOf(l.lang, l.card_id), S.settings);
+/** Cote de la carte + cotes de ses variantes (reverse Poké Ball…) quand la tâche du matin les connaît. */
+export function priceOf(lang, cardId) {
+  return { cm: cmOf(lang, cardId), variants: S.prices.get(cardKey(lang, cardId))?.variants || [] };
+}
+/** Charge la cote enregistrée d'une carte qui n'est pas encore dans la collection (fiche du catalogue). */
+export async function ensurePriceRow(lang, cardId) {
+  const k = cardKey(lang, cardId);
+  if (S.prices.has(k) || S.offline) return;
+  const { data } = await sb.from('card_prices').select('*').eq('lang', lang).eq('card_id', cardId).maybeSingle();
+  if (data) S.prices.set(k, data);
+}
+export const calcLine = (l) => lineCalc(l, priceOf(l.lang, l.card_id), S.settings);
 export const calcSealed = (s) => sealedCalc(s, s.cm_id != null ? S.sealedPrices.get(Number(s.cm_id)) : null);
 export function totals() {
   const priceMap = new Map();
-  for (const c of S.cards) priceMap.set(cardKey(c.lang, c.card_id), cmOf(c.lang, c.card_id));
+  for (const c of S.cards) priceMap.set(cardKey(c.lang, c.card_id), priceOf(c.lang, c.card_id));
   const t = portfolio(S.cards, S.sealed, priceMap, S.sealedPrices, S.settings);
   t.alerts = S.wish.filter((w) => w.target_price != null && wishPrice(w) != null && wishPrice(w) <= Number(w.target_price)).length;
+  t.toCheck = S.cards.filter((l) => calcLine(l).toCheck).length;
   return t;
 }
-export const wishPrice = (w) => cmPrice(cmOf(w.lang, w.card_id), S.settings.basis, w.variant);
+export const wishPrice = (w) => { const r = resolveCm(priceOf(w.lang, w.card_id), w.variant); return cmPrice(r.cm, S.settings.basis, r.variant); };
 export const ownedQty = (lang, cardId) => S.cards.reduce((a, c) => a + (c.lang === lang && c.card_id === cardId ? c.qty : 0), 0);
 
 /** Enregistre le point du jour dans l'historique (une fois les cotes connues). */
@@ -289,14 +303,27 @@ export async function saveSettings(patch) {
 }
 
 /** Recherche dans le catalogue des scellés Cardmarket. */
-export async function searchSealed(words, limit = 40) {
+/**
+ * Recherche dans le catalogue des scellés Cardmarket.
+ * words : mots à trouver dans le nom (anglais) ; cats : catégories Cardmarket ; like : motif supplémentaire
+ */
+export async function searchSealed({ words = [], cats = null, like = null, includeCases = false, limit = 60, order = null, withImage = false } = {}) {
   let q = sb.from('cm_sealed').select('*');
+  if (withImage) q = q.not('image', 'is', null);
   for (const w of words) q = q.ilike('name', `%${w.replace(/[%_]/g, '')}%`);
-  const rows = must(await q.order('trend', { ascending: false, nullsFirst: false }).limit(150), 'Recherche des scellés');
-  // Pertinence : le produit le plus proche de la recherche d'abord (les cartons « Case » après)
-  const wantsCase = words.some((w) => /^case$/i.test(w));
+  if (cats?.length) q = q.in('category_id', cats);
+  if (like) q = q.ilike('name', like);
+  const wantsCase = includeCases || words.some((w) => /^case$/i.test(w));
+  if (!wantsCase) q = q.not('name', 'ilike', '%case%');
+  order = order || (words.length ? 'relevance' : 'new');
+  if (order === 'new') q = q.order('id', { ascending: false });            // identifiants croissants = produits récents
+  else if (order === 'price_asc') q = q.order('trend', { ascending: true, nullsFirst: false });
+  else q = q.order('trend', { ascending: false, nullsFirst: false });
+  const rows = must(await q.limit(order === 'relevance' ? 300 : limit), 'Recherche des scellés');
+  // Pertinence : le nom le plus proche de la recherche d'abord
+  if (order !== 'relevance') return rows;
   const extra = (r) => r.name.split(/\s+/).length - words.length;
-  return rows.map((r) => ({ r, s: (!wantsCase && /\bcase\b/i.test(r.name) ? 100 : 0) + extra(r) + (r.trend == null ? 5 : 0) }))
+  return rows.map((r, i) => ({ r, s: extra(r) + (r.trend == null ? 5 : 0) + i / 1000 }))
     .sort((a, b) => a.s - b.s).slice(0, limit).map((x) => x.r);
 }
 export async function priceHistory(item) {

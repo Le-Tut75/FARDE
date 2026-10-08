@@ -2,7 +2,7 @@
 import { S, bulkInsertCards, updateCard } from '../store.js';
 import { FIELDS, autoMap, rowToSpec, matchSpec } from '../match.js';
 import { getSets, getSet, searchByName, searchCards } from '../tcgdex.js';
-import { CONDITIONS, VARIANTS } from '../valuation.js';
+import { CONDITIONS, variantLabel } from '../valuation.js';
 import { esc, eur, cardImg, langOptions, LANGS, pool, toast, download, toCsv, openDialog, closeDialog, $, $$ } from '../ui.js';
 
 const PAGE = 100;
@@ -239,7 +239,7 @@ function drawReview() {
   <div class="row" id="rMoreRow" hidden><button class="btn" id="rMore">Afficher plus</button></div>
   <div class="bulk"><b>${imp.length.toLocaleString('fr-FR')} ligne${imp.length > 1 ? 's' : ''} · ${qty.toLocaleString('fr-FR')} carte${qty > 1 ? 's' : ''} à importer</b>
     ${dup ? `<span class="small">${dup} déjà dans ta collection${st.merge ? ' (quantités additionnées)' : ''}</span>` : ''}
-    <span style="flex:1"></span><button class="btn sm" id="rSkipNF">Ignorer les introuvables</button><button class="btn sm" id="rGo" style="background:var(--accent);color:var(--accent-ink);border-color:var(--accent)" ${imp.length ? '' : 'disabled'}>Importer</button></div>`;
+    <span style="flex:1"></span><button class="btn sm" id="rSkipNF">Ignorer les introuvables</button><button class="btn sm" id="rGo" style="background:var(--on-btn);color:var(--btn);border-color:var(--on-btn)" ${imp.length ? '' : 'disabled'}>Importer</button></div>`;
   $('#rTabs', root).onclick = (e) => { const b = e.target.closest('button[data-f]'); if (b) { st.filter = b.dataset.f; st.shown = PAGE; drawReview(); } };
   $('#rBack', root).onclick = () => { st.step = 'map'; draw(); };
   $('#rMore', root).onclick = () => { st.shown += PAGE; list(); };
@@ -267,7 +267,7 @@ function list() {
 function rowHtml(r) {
   const s = stateOf(r), sp = r.spec;
   const srcTxt = [sp.rawName || '(sans nom)', sp.local ? `n° ${sp.local}${sp.total ? '/' + sp.total : ''}` : '', sp.setText, LANGS[sp.lang] ? sp.lang.toUpperCase() : ''].filter(Boolean).map(esc).join(' · ');
-  const extra = [sp.qty > 1 ? `×${sp.qty}` : '', sp.buyPrice != null ? eur(sp.buyPrice) : '', sp.condition !== 'NM' ? sp.condition : '', sp.variant && sp.variant !== 'normal' ? VARIANTS[sp.variant] : '', sp.grading ? `${sp.grading.company} ${sp.grading.grade}` : ''].filter(Boolean).map(esc).join(' · ');
+  const extra = [sp.qty > 1 ? `×${sp.qty}` : '', sp.buyPrice != null ? eur(sp.buyPrice) : '', sp.condition !== 'NM' ? sp.condition : '', sp.variant && sp.variant !== 'normal' ? variantLabel(sp.variant) : '', sp.grading ? `${sp.grading.company} ${sp.grading.grade}` : ''].filter(Boolean).map(esc).join(' · ');
   const pill = s === 'skip' ? `<span class="pill">Ignorée</span>` : `<span class="pill ${STATUS[s][0]}">${r.picked ? 'Choisie' : STATUS[s][1]}</span>`;
   const ch = r.choice;
   const quick = !ch && r.res.candidates.length ? `<div class="row" style="gap:6px;margin-top:6px">${r.res.candidates.slice(0, 5).map((c, k) => `<button class="tile" style="width:56px" data-pick="${r.i}" data-k="${k}" title="${esc(c.name)} · ${esc(c.setName || '')} ${esc(c.localId)}"><div class="img">${cardImg(c.image, c.name)}</div><span class="small num ellip">${esc(c.localId)}</span></button>`).join('')}</div>` : '';
@@ -330,7 +330,7 @@ async function doImport() {
   const toInsert = [], merges = new Map();
   for (const r of rows) {
     const sp = r.spec, c = r.choice;
-    const variant = sp.variant && VARIANTS[sp.variant] ? sp.variant : 'normal';
+    const variant = sp.variant || 'normal';
     const line = {
       lang: sp.lang, card_id: c.id, name: c.name, local_id: c.localId ?? null, set_id: c.setId ?? null, set_name: c.setName ?? null,
       set_total: c.setTotal ?? null, image: c.image ?? null, rarity: null, variant, condition: sp.condition, qty: sp.qty,

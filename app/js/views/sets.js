@@ -2,7 +2,7 @@ import { S } from '../store.js';
 import { getSetsNewestFirst, getSet, getCard } from '../tcgdex.js';
 import { cmPrice } from '../valuation.js';
 import { openCard } from '../carddialog.js';
-import { esc, eur, cardImg, langOptions, frDate, pool, $ } from '../ui.js';
+import { esc, eur, cardImg, langOptions, frDate, pool, setPicker, $ } from '../ui.js';
 
 const st = { lang: null, set: '', show: 'all', seq: 0 };
 let root;
@@ -13,7 +13,7 @@ export function render(el) {
     <div class="vh"><div><h2>Complétion de série</h2><p>Vois ce qui te manque dans une extension, carte par carte.</p></div></div>
     <div class="row panel">
       <div class="field" style="flex:1 1 120px"><label for="xLang">Langue</label><select id="xLang">${langOptions(st.lang)}</select></div>
-      <div class="field" style="flex:3 1 240px"><label for="xSet">Série</label><select id="xSet"></select></div>
+      <div class="field" style="flex:3 1 240px"><label for="xSet">Série</label><input id="xSet" type="text"></div>
       <div class="field" style="flex:1 1 140px"><label for="xShow">Afficher</label><select id="xShow"><option value="all">Toutes</option><option value="miss">Manquantes</option><option value="own">Possédées</option></select></div>
     </div>
     <div class="panel" id="xSum" hidden></div>
@@ -22,26 +22,24 @@ export function render(el) {
   root = el.firstElementChild;
   $('#xShow', root).value = st.show;
   $('#xLang', root).onchange = () => { st.lang = $('#xLang', root).value; st.set = ''; fill(); };
-  $('#xSet', root).onchange = () => { st.set = $('#xSet', root).value; load(); };
+  setPicker($('#xSet', root), () => getSetsNewestFirst(st.lang), (s) => { if (s) { st.set = s.id; load(); } }, { allLabel: 'Tape le nom d’une série…' });
   $('#xShow', root).onchange = () => { st.show = $('#xShow', root).value; load(); };
   $('#xGrid', root).addEventListener('click', (e) => { const b = e.target.closest('.c[data-id]'); if (b) openCard(st.lang, b.dataset.id); });
   fill();
 }
 
 async function fill() {
-  const sel = $('#xSet', root);
-  sel.innerHTML = `<option>Chargement…</option>`;
+  const inp = $('#xSet', root);
   try {
     const sets = await getSetsNewestFirst(st.lang);
-    if (!st.set) {
+    if (!st.set || !sets.some((s) => s.id === st.set)) {
       // Par défaut : la série où tu as le plus de cartes
       const cnt = {}; S.cards.filter((c) => c.lang === st.lang && c.set_id).forEach((c) => (cnt[c.set_id] = (cnt[c.set_id] || 0) + 1));
       st.set = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0] || sets[0]?.id || '';
     }
-    sel.innerHTML = sets.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
-    sel.value = st.set;
+    inp.value = sets.find((s) => s.id === st.set)?.name || '';
     load();
-  } catch (e) { sel.innerHTML = `<option value="">Séries indisponibles</option>`; $('#xGrid', root).innerHTML = `<p class="loss">${esc(e.message)}</p>`; }
+  } catch (e) { $('#xGrid', root).innerHTML = `<p class="loss">${esc(e.message)}</p>`; }
 }
 
 async function load() {

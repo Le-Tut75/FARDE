@@ -42,6 +42,10 @@ export function render(el) {
           <div class="row" style="flex-wrap:nowrap"><input type="text" id="gTg" inputmode="numeric" value="${esc(s.telegram_chat_id || '')}" placeholder="Ex. 123456789"><button class="btn" id="gTgSave">Enregistrer</button></div>
         </div>
       </div>
+      <div class="panel stack"><h3>Mon compte</h3>
+        <form class="stack" id="gPwForm"><div class="field"><label for="gPw">Nouveau mot de passe</label><input id="gPw" type="password" minlength="8" autocomplete="new-password" placeholder="8 caractères minimum" required></div>
+        <button class="btn" style="align-self:flex-start">Changer mon mot de passe</button></form>
+      </div>
       <div class="panel stack"><h3>Affichage</h3>
         <div class="field"><label for="gTheme">Thème</label><select id="gTheme"><option value="">Comme le système</option><option value="light">Clair</option><option value="dark">Sombre</option></select></div>
         <button class="btn" id="gCache" style="align-self:flex-start">Vider le cache du catalogue</button>
@@ -65,6 +69,12 @@ export function render(el) {
     const v = $('#gTg', root).value.trim();
     if (v && !/^-?\d{4,15}$/.test(v)) return toast('L’identifiant Telegram est un nombre (ex. 123456789).');
     try { await saveSettings({ telegram_chat_id: v || null }); toast(v ? 'Alertes Telegram activées.' : 'Alertes Telegram désactivées.'); } catch (x) { toast(x.message, 5000); }
+  };
+  $('#gPwForm', root).onsubmit = async (e) => {
+    e.preventDefault();
+    const { error } = await sb.auth.updateUser({ password: $('#gPw', root).value });
+    if (error) return toast(/same|different/i.test(error.message) ? 'Choisis un mot de passe différent de l’actuel.' : error.message, 5000);
+    $('#gPw', root).value = ''; toast('Mot de passe changé.');
   };
   $('#gCache', root).onclick = () => { clearCatalogCache(); toast('Cache vidé.'); };
   $('#gExport', root).onclick = () => {
