@@ -64,6 +64,34 @@ function cached(key, ttl, loader, persist = true) {
   return p;
 }
 
+// ---- Images de repli ----
+// TCGdex n'a pas toujours l'image d'une carte dans chaque langue (séries récentes, promos).
+// Les identifiants étant communs, on reprend alors l'image anglaise : assets.tcgdex.net/en/<bloc>/<série>/<numéro>
+let serieOf = null, serieP = null;
+export function loadSerieMap() {
+  if (!serieP) {
+    serieP = getSeriesGroups('en').then((groups) => {
+      const m = new Map();
+      for (const g of groups) if (!g.id.startsWith('_')) for (const st of g.sets) m.set(st.id, g.id);
+      serieOf = m; return m;
+    }).catch(() => { serieP = null; return new Map(); });
+  }
+  return serieP;
+}
+/** Image d'une carte, ou celle de sa version anglaise si la langue n'en a pas. */
+export function imageOf(cardId, localId, image) {
+  if (image) return image;
+  const i = String(cardId || '').lastIndexOf('-');
+  const setId = i > 0 ? cardId.slice(0, i) : null;
+  const serie = setId && serieOf?.get(setId);
+  const lid = localId ?? (i > 0 ? cardId.slice(i + 1) : null);
+  return serie && lid ? `https://assets.tcgdex.net/en/${serie}/${setId}/${lid}` : null;
+}
+const fillImages = async (cards) => {
+  if (cards?.some((c) => !c.image)) { await loadSerieMap(); for (const c of cards) if (!c.image) c.image = imageOf(c.id, c.localId, null); }
+  return cards;
+};
+
 /** Liste des séries, les plus récentes d'abord. */
 export const getSets = (lang) => cached(`sets.${lang}`, 3 * DAY, async () => {
   const s = await api(`/${lang}/sets`);
@@ -79,7 +107,7 @@ export const getSet = (lang, id) => cached(`set.${lang}.${id}`, 7 * DAY, async (
     id: s.id, name: s.name, cardCount: s.cardCount || {}, releaseDate: s.releaseDate || null,
     cards: (s.cards || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null })),
   };
-});
+}).then(async (s) => { if (s) await fillImages(s.cards); return s; });
 
 function slimCard(c) {
   return {
@@ -88,13 +116,18 @@ function slimCard(c) {
     set: c.set ? { id: c.set.id, name: c.set.name, total: c.set.cardCount?.official ?? c.set.cardCount?.total ?? null } : null,
     cm: c.pricing?.cardmarket || null, tcgplayer: c.pricing?.tcgplayer || null,
     vd: Array.isArray(c.variants_detailed) ? c.variants_detailed.map((v) => ({ key: variantKey(v), cmId: v?.thirdParty?.cardmarket ?? null })) : null,
+    // Identifiant TCGplayer : sert de photo de secours quand TCGdex n'a pas encore l'image (promos récentes)
+    tcg: (c.variants_detailed || []).map((v) => v?.thirdParty?.tcgplayer).find(Boolean) ?? null,
   };
 }
 /** Fiche complète d'une carte (prix inclus), cache 24 h. */
 export function getCard(lang, id, { fresh = false } = {}) {
   const key = `card.${lang}.${id}`;
   if (fresh) mem.delete(key);
-  return cached(key, fresh ? 0 : DAY, async () => { const c = await api(`/${lang}/cards/${encodeURIComponent(id)}`); return c ? slimCard(c) : null; });
+  const load = () => cached(key, fresh ? 0 : DAY, async () => { const c = await api(`/${lang}/cards/${encodeURIComponent(id)}`); return c ? slimCard(c) : null; });
+  // Fiche mise en cache avant la version 1.8 (sans identifiant TCGplayer) : on la recharge une fois
+  return load().then((c) => { if (c && c.tcg === undefined && !fresh) { mem.delete(key); fresh = true; return load(); } return c; })
+    .then(async (c) => { if (c && !c.image) { await loadSerieMap(); c.image = imageOf(c.id, c.localId, null); } return c; });
 }
 
 /** Recherche par nom (contient), par numéro ou par illustrateur. */
@@ -111,12 +144,12 @@ export async function searchCards(lang, { q, mode = 'name', exact = false, setId
   }
   if (mode === 'illu') {
     const r = await cached(`illu.${lang}.${q.toLowerCase()}`, DAY, () => api(`/${lang}/illustrators/${encodeURIComponent(q)}`), false);
-    return (r?.cards || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null }));
+    return fillImages((r?.cards || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null })));
   }
   const p = new URLSearchParams();
   if (mode === 'num') p.set('localId', `eq:${q}`); else p.set('name', exact ? `eq:${q}` : q);
   const r = await cached(`search.${lang}.${p}`, DAY, () => api(`/${lang}/cards?${p}`), false);
-  return (r || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null }));
+  return fillImages((r || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null })));
 }
 
 /** Pour l'import : recherche large sur le mot le plus long du nom (gère "Dracaufeu ex" / "Dracaufeu-ex"). */
@@ -132,7 +165,7 @@ export function searchByName(lang, name) {
       const r2 = await api(`/${lang}/cards?name=${encodeURIComponent(w.slice(1))}`);
       r = (r2 || []).filter((c) => norm(c.name).includes(norm(w)));
     }
-    return (r || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null }));
+    return fillImages((r || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null })));
   }, false);
 }
 
@@ -142,7 +175,28 @@ export const LANG_ORDER = ['fr', 'en', 'de', 'it', 'es', 'ja'];
  * Séries regroupées par bloc (Méga-Évolution, Écarlate et Violet…), le plus récent d'abord.
  * Résultat : [{ id, name, sets: [{ id, name, cardCount }] }]
  */
-export const getSeriesGroups = (lang) => cached(`blocs.${lang}`, 3 * DAY, async () => {
+// ---- Promos (Black Star Promos, promos Épée et Bouclier, McDonald's…) ----
+/** Préfixe imprimé sur la carte -> série TCGdex (« SWSH050 », « SVP 085 »). */
+export const PROMO_PREFIX = { SVP: 'svp', MEP: 'mep', SWSH: 'swshp', SM: 'smp', XY: 'xyp', BW: 'bwp', HGSS: 'hgssp', DP: 'dpp', NP: 'np' };
+const PROMO_ID = /^(svp|mep|swshp|smp|xyp|bwp|hgssp|dpp|np|basep|wp)$|^mcd|^pop\d/i;
+const promoIds = new Set();
+/** La série est-elle une série de promos ? (identifiant connu, ou « promo » / « McDonald's » dans son nom) */
+export const isPromoSet = (id, name = '') => PROMO_ID.test(id || '') || promoIds.has(id) || /promo|mcdonald/i.test(name || '');
+/** Séries de promos d'une langue, les plus récentes d'abord. */
+export async function promoSets(lang) {
+  const sets = (await getSets(lang).catch(() => [])).filter((s) => isPromoSet(s.id, s.name));
+  sets.forEach((s) => promoIds.add(s.id));
+  return [...sets].reverse();
+}
+/** Ajoute un groupe « Promos » en tête de la liste des séries : toutes les promos au même endroit. */
+function withPromos(groups) {
+  const seen = new Set(), sets = [];
+  for (const g of groups) for (const s of g.sets) if (!seen.has(s.id) && isPromoSet(s.id, s.name)) { seen.add(s.id); promoIds.add(s.id); sets.push(s); }
+  return sets.length ? [{ id: '_promos', name: 'Promos (toutes séries)', sets }, ...groups] : groups;
+}
+
+export const getSeriesGroups = (lang) => rawGroups(lang).then(withPromos);
+const rawGroups = (lang) => cached(`blocs.${lang}`, 3 * DAY, async () => {
   const [series, allSets] = await Promise.all([api(`/${lang}/series`), getSets(lang)]);
   const groups = [];
   const seen = new Set();

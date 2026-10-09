@@ -25,9 +25,28 @@ export function cardImg(url, alt = '', cls = '', q = 'low') {
   if (!url) return `<div class="ph ${cls}">${esc(alt)}</div>`;
   return `<img class="${cls}" loading="lazy" decoding="async" src="${esc(url)}/${q}.webp" alt="${esc(alt)}" data-fallback="${esc(alt)}">`;
 }
-// Remplace toute image cassée par un cadre gris
-document.addEventListener('error', (e) => {
+// Image cassée : 1) version anglaise TCGdex, 2) photo TCGplayer de la même carte, 3) cadre gris
+const tcgImg = (id, high) => `https://tcgplayer-cdn.tcgplayer.com/product/${id}_${high ? 'in_1000x1000' : '200w'}.jpg`;
+const tcgCache = new Map();
+async function tcgFallback(src) {
+  // https://assets.tcgdex.net/<langue>/<bloc>/<série>/<numéro>/low.webp -> carte <série>-<numéro>
+  const m = src.match(/assets\.tcgdex\.net\/([a-z]{2}(?:-[a-z]+)?)\/[^/]+\/([^/]+)\/([^/]+)\/(low|high)\./i);
+  if (!m) return null;
+  const id = `${m[2]}-${m[3]}`, lang = m[1] === 'ja' ? 'ja' : 'en';
+  if (!tcgCache.has(id)) tcgCache.set(id, import('./tcgdex.js').then((t) => t.getCard(lang, id)).then((c) => c?.tcg || null).catch(() => null));
+  const tcg = await tcgCache.get(id);
+  return tcg ? tcgImg(tcg, m[4] === 'high') : null;
+}
+document.addEventListener('error', async (e) => {
   const t = e.target;
+  if (t.tagName === 'IMG' && t.dataset.fallback != null && !t.dataset.en && /assets\.tcgdex\.net\/(fr|de|it|es|pt|nl|pl)\//.test(t.src)) {
+    t.dataset.en = '1'; t.src = t.src.replace(/assets\.tcgdex\.net\/[a-z]{2}\//, 'assets.tcgdex.net/en/'); return;
+  }
+  if (t.tagName === 'IMG' && t.dataset.fallback != null && !t.dataset.tcg && /assets\.tcgdex\.net/.test(t.src)) {
+    t.dataset.tcg = '1';
+    const alt = await tcgFallback(t.src);
+    if (alt && t.isConnected) { t.referrerPolicy = 'no-referrer'; t.classList.add('tcgp'); t.src = alt; return; }
+  }
   if (t.tagName === 'IMG' && t.dataset.fallback != null && !t.dataset.failed) {
     t.dataset.failed = '1';
     const d = document.createElement('div');
@@ -38,9 +57,16 @@ document.addEventListener('error', (e) => {
 }, true);
 
 let toastTimer;
-export function toast(msg, ms = 3000) {
+/** Message bref en bas de l'écran ; action facultative : { label, onClick } */
+export function toast(msg, ms = 3000, action = null) {
   const t = $('#toast');
   t.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'toast-act'; b.textContent = action.label;
+    b.onclick = () => { t.hidden = true; action.onClick(); };
+    t.append(' ', b); ms = Math.max(ms, 6000);
+  }
   t.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), ms);

@@ -25,19 +25,24 @@ export function render(el) {
   if (st.defaults.binder === undefined || (st.defaults.binder && !S.binders.some((b) => b.id === st.defaults.binder))) st.defaults.binder = S.binders[0]?.id || '';
   el.innerHTML = `<section class="view">
     <div class="vh"><div><h2>Importer un tableur</h2><p>Google Sheets, Excel ou CSV : chaque ligne est rapprochée du catalogue, tu vérifies les cas douteux, puis tout part dans ta collection.</p></div>
-      <button class="btn" id="iTpl">Télécharger un modèle</button></div>
+      <button class="btn" id="iTpl">Télécharger le modèle CSV</button></div>
     <div class="steps" id="iSteps"></div>
     <div id="iBody"></div>
   </section>`;
   root = el.firstElementChild;
-  $('#iTpl', root).onclick = () => download('modele-import-farde.csv', toCsv(
+  $('#iTpl', root).onclick = cardTemplate;
+  draw();
+}
+export function update() { /* l'import garde son propre état */ }
+
+/** Modèle CSV pour les cartes : colonnes reconnues automatiquement, avec 3 exemples. */
+export function cardTemplate() {
+  download('modele-cartes-farde.csv', toCsv(
     ['Nom', 'Numéro', 'Série', 'Langue', 'État', 'Quantité', "Prix d'achat", "Date d'achat", 'Variante', 'Gradation', 'Notes'],
     [['Dracaufeu ex', '199/165', '151', 'FR', 'NM', '1', '60,00', '12/03/2024', '', '', 'Exemple à remplacer'],
      ['Pikachu', '173/165', '151', 'FR', 'NM', '2', '4,50', '', 'Reverse', '', ''],
      ['Mew ex', '232/091', 'Destinées de Paldea', 'FR', '', '1', '35', '', '', 'PSA 10', '']]), 'text/csv;charset=utf-8');
-  draw();
 }
-export function update() { /* l'import garde son propre état */ }
 
 function steps() {
   const L = [['source', '1. Fichier'], ['map', '2. Colonnes'], ['review', '3. Vérification'], ['done', '4. Terminé']];

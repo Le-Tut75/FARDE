@@ -2,6 +2,7 @@ import { S, calcSealed, addSealed, updateSealed, deleteSealed, searchSealed, pri
 import { getSets, getSetsNewestFirst, getSeriesGroups } from '../tcgdex.js';
 import { norm } from '../match.js';
 import { openSell } from '../sell.js';
+import { plusBtn, quickAddSealed, bindPlus } from '../quick.js';
 import { esc, eur, signEur, pct, plClass, langOptions, openDialog, closeDialog, toast, num, today, lineChart, confirmButton, setPicker, $ } from '../ui.js';
 
 let root;
@@ -56,15 +57,19 @@ export function sealedImg(url, alt = '', cls = '') {
 
 const st = { q: '', type: '', set: null, order: '', seq: 0, results: [] };
 
-export function render(el) {
+export function render(el, { addOnly = false } = {}) {
+  const qp = new URLSearchParams(location.hash.split('?')[1] || '');
+  if (addOnly && qp.has('q')) { st.q = qp.get('q'); st.type = ''; st.set = null; }
   el.innerHTML = `<section class="view">
-    <div class="vh"><div><h2>Produits scellés</h2><p>Displays, ETB, coffrets, blisters : cote Cardmarket mise à jour chaque matin.</p></div>
-      <div class="row"><button class="btn" id="sCustom">Produit hors catalogue</button><a class="btn pri" href="#sCat" id="sAddJump">Ajouter un scellé</a></div></div>
+    ${addOnly ? `<div class="vh"><div><h2>Ajouter un produit scellé</h2><p>Cherche ton produit (le nom français marche) : le « + » l’ajoute directement, un clic sur la photo ouvre sa fiche pour saisir prix et quantité.</p></div>
+      <button class="btn" id="sCustom">Produit hors catalogue</button></div>`
+    : `<div class="vh"><div><h2>Produits scellés</h2><p>Displays, ETB, coffrets, blisters : cote Cardmarket mise à jour chaque matin.</p></div>
+      <div class="row"><a class="btn" href="#import-scelles">Importer un tableur</a><a class="btn pri" href="#ajouter-scelle"><svg class="ic"><use href="#i-plus"/></svg>Ajouter un scellé</a></div></div>
     <div class="tw"><table class="resp nochk" id="sTable"><thead><tr>
       <th></th><th>Produit</th><th>Type</th><th>Lang.</th><th class="r">Qté</th><th class="r">Achat u.</th><th class="r">Cote u.</th><th class="r">Valeur</th><th class="r">P&amp;L</th>
-    </tr></thead><tbody></tbody><tfoot></tfoot></table></div>
+    </tr></thead><tbody></tbody><tfoot></tfoot></table></div>`}
 
-    <div class="panel stack" id="sCat">
+    ${!addOnly ? '' : `<div class="panel stack" id="sCat">
       <div class="row between"><h3>Catalogue des scellés</h3><span class="muted small" id="sCount"></span></div>
       <div class="filters">
         <div class="field q"><label for="sQ">Recherche</label><input id="sQ" type="search" placeholder="ETB Flammes Fantasmagoriques, display 151…" value="${esc(st.q)}" autocomplete="off" enterkeyhint="search"></div>
@@ -74,14 +79,18 @@ export function render(el) {
       <div class="row between"><span class="muted small" id="sInfo"></span>
         <label class="row small" style="gap:6px">Tri <select id="sOrder" style="width:auto"><option value="">Pertinence</option><option value="new">Nouveautés</option><option value="price_desc">Prix décroissant</option><option value="price_asc">Prix croissant</option></select></label></div>
       <div class="sgrid" id="sRes"></div>
-    </div>
+    </div>`}
     <p class="note">La cote Cardmarket d’un produit scellé regroupe les langues européennes (les produits japonais, chinois et coréens ont leur propre fiche). Pour une cote différente, saisis une cote manuelle. Photos : catalogue TCGplayer, rapprochées automatiquement.</p>
   </section>`;
   root = el.firstElementChild;
+  if (!addOnly) {
+    $('#sTable tbody', root).addEventListener('click', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) { const s = S.sealed.find((x) => x.id === tr.dataset.id); if (s) editDialog(s); } });
+    update(); return;
+  }
   $('#sType', root).value = st.type; $('#sOrder', root).value = st.order;
   $('#sCustom', root).onclick = () => editDialog(null, null);
-  $('#sAddJump', root).onclick = (e) => { e.preventDefault(); $('#sCat', root).scrollIntoView({ behavior: 'smooth' }); $('#sQ', root).focus({ preventScroll: true }); };
-  $('#sTable tbody', root).addEventListener('click', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) { const s = S.sealed.find((x) => x.id === tr.dataset.id); if (s) editDialog(s); } });
+  bindPlus($('#sRes', root), (b) => quickAddSealed(st.results[+b.dataset.k]));
+  setTimeout(() => $('#sQ', root)?.focus(), 50);
   let t;
   $('#sQ', root).addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { st.q = $('#sQ', root).value.trim(); browse(); }, 300); });
   $('#sQ', root).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); st.q = e.target.value.trim(); browse(); } });
@@ -113,14 +122,14 @@ async function browse() {
     st.results = rows;
     const what = [st.q && `« ${st.q} »`, st.set?.name, ty[1] && st.type ? ty[1].split(' (')[0] : null].filter(Boolean).join(' · ');
     info.textContent = rows.length ? `${rows.length >= 60 ? '60 premiers résultats' : rows.length + ' produit' + (rows.length > 1 ? 's' : '')}${what ? ' · ' + what : ' · nouveautés'}` : '';
-    res.innerHTML = rows.length ? rows.map((r, k) => `<button class="stile" data-k="${k}" title="${esc(r.name)}">${sealedImg(r.image, r.name)}
-        <div class="t1">${esc(r.name)}</div><div class="t2"><span class="ellip">${esc(r.category || '')}</span><b class="num">${eur(r.trend)}</b></div></button>`).join('')
+    res.innerHTML = rows.length ? rows.map((r, k) => `<button class="stile" data-k="${k}" title="${esc(r.name)}"><div style="position:relative">${sealedImg(r.image, r.name)}${plusBtn()}</div>
+        <div class="t1">${esc(r.name)}</div>${S.sealed.some((x) => Number(x.cm_id) === Number(r.id)) ? '<span class="pill ok" style="align-self:flex-start">Possédé</span>' : ''}<div class="t2"><span class="ellip">${esc(r.category || '')}</span><b class="num">${eur(r.trend)}</b></div></button>`).join('')
       : `<div class="empty" style="grid-column:1/-1">Aucun produit trouvé${what ? ' pour ' + esc(what) : ''}. Essaie moins de mots, un autre type, ou le nom anglais de la série.</div>`;
   } catch (e) { if (my === st.seq) res.innerHTML = `<p class="loss">${esc(e.message)}</p>`; }
 }
 
 export function update() {
-  if (!root?.isConnected) return;
+  if (!root?.isConnected || !$('#sTable', root)) return;
   const tb = $('#sTable tbody', root);
   if (!S.sealed.length) {
     tb.innerHTML = `<tr><td colspan="9"><div class="empty">Aucun scellé dans ta collection. Cherche un produit dans le catalogue ci-dessous et clique dessus pour l’ajouter.</div></td></tr>`;

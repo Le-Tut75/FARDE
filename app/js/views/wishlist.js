@@ -1,5 +1,6 @@
 import { S, wishPrice, updateWish, deleteWish } from '../store.js';
 import { openCard } from '../carddialog.js';
+import { plusBtn, quickAddCard, bindPlus } from '../quick.js';
 import { variantLabel } from '../valuation.js';
 import { esc, eur, cardImg, num, toast, $ } from '../ui.js';
 
@@ -14,6 +15,11 @@ export function render(el) {
   g.addEventListener('change', async (e) => {
     const i = e.target.closest('[data-target]'); if (!i) return;
     try { await updateWish(i.dataset.target, { target_price: num(i.value), last_alert_at: null }); toast('Prix cible enregistré.'); } catch (x) { toast(x.message, 5000); }
+  });
+  bindPlus(g, async (el) => {
+    const w = S.wish.find((x) => x.id === el.dataset.open); if (!w) return;
+    await quickAddCard(w.lang, w.card_id, { name: w.name, image: w.image });
+    toast(`${w.name} ajoutée à ta collection.`, 7000, { label: 'Retirer de la wishlist', onClick: () => deleteWish(w.id).then(() => toast('Retirée de la wishlist.')).catch((x) => toast(x.message, 5000)) });
   });
   g.addEventListener('click', async (e) => {
     const del = e.target.closest('[data-del]');
@@ -35,7 +41,7 @@ export function update() {
   });
   g.innerHTML = list.map((w) => {
     const p = wishPrice(w), hit = w.target_price != null && p != null && p <= Number(w.target_price);
-    return `<div class="tile" style="cursor:default"><div class="img" role="button" tabindex="0" data-open="${w.id}" style="cursor:pointer">${cardImg(w.image, w.name)}${hit ? '<span class="badge ok">Prix atteint</span>' : ''}${S.deals.get(w.card_id) ? `<span class="badge down" title="Cote nettement sous sa moyenne 30 jours (voir Opportunités)">${String(S.deals.get(w.card_id).drop_pct).replace('.', ',')} %</span>` : ''}</div>
+    return `<div class="tile" style="cursor:default"><div class="img" role="button" tabindex="0" data-open="${w.id}" style="cursor:pointer">${cardImg(w.image, w.name)}${hit ? '<span class="badge ok own-l">Prix atteint</span>' : ''}${plusBtn('Je l’ai : ajouter à ma collection')}${S.deals.get(w.card_id) ? `<span class="badge down" title="Cote nettement sous sa moyenne 30 jours (voir Opportunités)">${String(S.deals.get(w.card_id).drop_pct).replace('.', ',')} %</span>` : ''}</div>
       <div class="t1 ellip">${esc(w.name)}</div><div class="t2"><span class="ellip">${esc(w.set_name || '')} · ${esc(w.lang.toUpperCase())}${w.variant !== 'normal' ? ' · ' + esc(variantLabel(w.variant)) : ''}</span></div>
       <div class="t2"><span>Cote</span><b class="num ${hit ? 'gain' : ''}">${eur(p)}</b></div>
       <div class="row" style="gap:6px;flex-wrap:nowrap"><input type="number" min="0" step="0.5" inputmode="decimal" id="wt-${w.id}" data-target="${w.id}" value="${w.target_price ?? ''}" placeholder="Prix cible €" aria-label="Prix cible pour ${esc(w.name)}" style="padding:5px 8px">

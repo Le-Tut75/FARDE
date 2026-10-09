@@ -404,3 +404,103 @@ details.more[open] summary::before{content:"−"}
 .vitrine{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
 .linkrow{padding:10px 12px;border:1px solid var(--line-soft);border-radius:12px;background:var(--ground);flex-wrap:nowrap}
 @media (max-width:560px){.linkrow{flex-wrap:wrap}}
+
+/* ---------- v1.5 : navigation, « + », tableau de bord, page Ajouter, eBay ---------- */
+.side-nav a.nav-add{margin:6px 0;background:var(--btn);color:var(--on-btn)}
+.side-nav a.nav-add:hover{background:var(--btn);opacity:.9;color:var(--on-btn)}
+.side-nav a.nav-add[aria-current="page"]{background:var(--btn);color:var(--on-btn);box-shadow:none}
+@media (max-width:900px){
+  .tabbar .tab-add i{display:grid;place-items:center;width:44px;height:44px;margin-top:-20px;border-radius:50%;background:var(--btn);color:var(--on-btn);box-shadow:0 8px 18px -6px rgba(0,0,0,.45);border:3px solid var(--surface)}
+  .tabbar .tab-add svg{width:22px;height:22px;stroke-width:2.2}
+  .tabbar .tab-add[aria-current="page"]::after{display:none}
+}
+.subnav sup{font-size:9px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.subnav.back{background:none;padding:0;gap:12px;align-items:center}
+.subnav.back a{padding:7px 14px;background:var(--surface);border:1px solid var(--line);border-radius:99px;color:var(--ink)}
+.subnav.back span{color:var(--muted);font-size:14px;font-weight:600}
+.toast-act{margin-left:10px;background:none;border:0;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0}
+
+/* Pastille « + » sur les vignettes */
+.plus{position:absolute;top:6px;right:6px;z-index:2;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--surface);color:var(--ink);font:600 20px/1 var(--f-body);box-shadow:0 2px 8px rgba(0,0,0,.28);cursor:pointer;opacity:.94;transition:transform .12s,background .15s}
+.plus:hover{transform:scale(1.12);background:var(--btn);color:var(--on-btn)}
+.plus.busy{opacity:.5;pointer-events:none}
+.plus.done{background:var(--gain);color:#fff}
+.setgrid .c .plus{width:24px;height:24px;font-size:16px;top:4px;right:4px}
+.badge.own,.tile .own.badge{top:auto;bottom:7px}
+.ebi .plus{font-size:13px}
+
+/* Tableau de bord */
+.seg{display:flex;gap:4px;padding:4px;background:var(--sunk);border-radius:14px;width:max-content;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.seg button{border:0;background:none;padding:7px 14px;border-radius:10px;font-weight:600;font-size:14px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.seg button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.seg button span{font-size:12px;color:var(--muted);margin-left:2px}
+.dash{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px;align-items:start}
+@media (max-width:1050px){.dash{grid-template-columns:1fr}}
+.dash>*{min-width:0}
+.movers{display:flex;flex-direction:column;gap:18px}
+.movers h3{margin-bottom:6px}
+.mvv{display:flex;flex-direction:column;align-items:flex-end;line-height:1.3;text-align:right;font-size:13px}
+.mvv b{font-size:14.5px}
+.kpis{display:flex;gap:8px;flex-wrap:wrap}
+.kpis>*{font-size:13px;padding:4px 10px;border-radius:99px;background:rgba(255,255,255,.08);color:var(--hero-ink);text-decoration:none}
+.kpis a:hover{background:rgba(255,255,255,.16)}
+.kpis:empty{display:none}
+.worth b a{color:inherit}
+.empty-dash{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:28px}
+.empty-dash h3{font:600 22px var(--f-display);letter-spacing:-.02em}
+.empty-dash p{margin:0}
+
+/* Page Ajouter des items */
+.hub-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+@media (max-width:900px){.hub-cols{grid-template-columns:1fr}}
+.hub-col{display:flex;flex-direction:column;gap:6px;padding:22px}
+.hub-h{display:flex;gap:14px;align-items:center;padding-bottom:12px;border-bottom:1px solid var(--line-soft)}
+.hub-h h3{font:600 19px var(--f-display);letter-spacing:-.02em}
+.hub-h p{margin:2px 0 0}
+.hub-ic{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--accent-soft);color:var(--accent);flex:none}
+.hub-ic svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.hub-opts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.hub-opts li{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;padding:16px 0;border-bottom:1px solid var(--line-soft)}
+.hub-opts li:last-child{border-bottom:0;padding-bottom:0}
+.hub-opts li.off{opacity:.55}
+.hub-n{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--btn);color:var(--on-btn);font-weight:700;font-size:14px}
+.hub-opts b{font-size:15.5px}
+.req{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.req .lbl{font-size:12px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.03em}
+.hub-search input{padding:8px 11px}
+
+/* eBay */
+.ebs{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:16px}
+@media (max-width:700px){.ebs{flex-direction:column;align-items:stretch}}
+.ebgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:18px 14px}
+@media (max-width:480px){.ebgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 10px}}
+.ebi{display:flex;flex-direction:column;gap:6px;color:var(--ink);text-decoration:none;min-width:0}
+.ebi .simg{position:relative}
+.ebi .simg img{object-fit:cover;padding:0}
+.ebi .t1{font-weight:600;font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ebi .t2{display:flex;justify-content:space-between;gap:6px;font-size:13px;color:var(--muted)}
+.ebi .t2 b{color:var(--ink)}
+.ebi:hover .simg{border-color:var(--ink)}
+.presets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:700px){.presets{grid-template-columns:1fr}}
+.presets .wbtn{text-align:left;cursor:pointer;font:inherit}
+.setup code,.sub code{font-size:12px;background:var(--sunk);padding:1px 5px;border-radius:5px}
+@media (max-width:900px){.vh .btn.pri[href="#ajouter"]{display:none}}
+
+/* v1.6 : score des annonces eBay */
+.score{position:absolute;left:7px;bottom:7px;min-width:34px;height:26px;padding:0 7px;border-radius:99px;display:grid;place-items:center;font:700 13px var(--f-body);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.score.ok{background:var(--gain)} .score.al{background:var(--warn)} .score.err{background:var(--loss)}
+.score.lg{position:static;height:34px;min-width:44px;font-size:16px}
+table.mini td{padding:6px 0;font-size:14px;border-bottom:1px solid var(--line-soft)}
+table.mini tr.tot td{font-weight:700;border-bottom:0;padding-top:9px}
+.reasons{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.reasons li{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px}
+.reasons li span{font-weight:700;text-align:right}
+
+/* v1.7 : promos */
+.promo-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.promo-bar .lbl{font-size:12px;font-weight:700;color:var(--ink);text-transform:uppercase;letter-spacing:.03em}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:5px 12px;font:600 13px var(--f-body);color:var(--ink);cursor:pointer;white-space:nowrap}
+.chip:hover{border-color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--btn);color:var(--on-btn);border-color:var(--btn)}
+.tcgp{object-fit:contain!important;background:#fff}

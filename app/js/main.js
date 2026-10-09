@@ -14,16 +14,25 @@ import * as expenses from './views/expenses.js';
 import * as opportunities from './views/opportunities.js';
 import * as sales from './views/sales.js';
 import * as quickadd from './views/quickadd.js';
+import * as addhub from './views/addhub.js';
+import * as addcard from './views/addcard.js';
+import * as importSealed from './views/importsealed.js';
+import * as ebay from './views/ebay.js';
 import { openSearch } from './search.js';
 
-const ROUTES = { portefeuille: dashboard, catalogue, collection, import: importView, fardes: binders, series: sets, scelles: sealed, wishlist, reglages: settings, depenses: expenses, opportunites: opportunities, ventes: sales, ajout: quickadd };
+const ROUTES = { portefeuille: dashboard, catalogue, collection, import: importView, fardes: binders, series: sets, scelles: sealed, wishlist, reglages: settings, depenses: expenses,
+  opportunites: opportunities, ventes: sales, ajout: quickadd, ajouter: addhub, 'ajouter-carte': addcard, 'ajouter-scelle': { render: (el) => sealed.render(el, { addOnly: true }), update: sealed.update }, 'import-scelles': importSealed, ebay };
 // Sous-sections : une seule entrée dans le menu, des onglets en haut de la page
 const GROUPS = {
   portefeuille: [['portefeuille', 'Résumé'], ['ventes', 'Ventes'], ['depenses', 'Dépenses']],
-  collection: [['collection', 'Liste'], ['fardes', 'Fardes'], ['series', 'Complétion'], ['ajout', 'Ajout rapide'], ['import', 'Importer']],
+  collection: [['collection', 'Cartes'], ['scelles', 'Scellés'], ['fardes', 'Fardes'], ['series', 'Complétion']],
+  marche: [['catalogue', 'Catalogue'], ['opportunites', 'Opportunités'], ['ebay', 'Veille eBay <sup>bêta</sup>']],
 };
 const PARENT = {};
 for (const [g, items] of Object.entries(GROUPS)) for (const [k] of items) PARENT[k] = g;
+// Les écrans d'ajout : un lien de retour vers la page « Ajouter des items »
+const ADD = { import: 'Tableur de cartes', 'import-scelles': 'Tableur de scellés', ajout: 'Scan et ajout par série', 'ajouter-carte': 'Ajout manuel d’une carte', 'ajouter-scelle': 'Ajout manuel d’un scellé' };
+for (const k of Object.keys(ADD)) PARENT[k] = 'ajouter';
 let current = null;
 
 settings.applyTheme();
@@ -32,27 +41,29 @@ function show(id) {
   for (const s of ['boot', 'auth', 'app']) $('#' + s).hidden = s !== id;
 }
 
-const MORE = ['wishlist', 'reglages', 'opportunites'];
-const TITLES = { portefeuille: 'Portefeuille', catalogue: 'Catalogue', collection: 'Collection', import: 'Import', fardes: 'Fardes', series: 'Séries', scelles: 'Scellés', wishlist: 'Wishlist', reglages: 'Réglages', depenses: 'Dépenses', opportunites: 'Opportunités', ventes: 'Ventes', ajout: 'Ajout rapide' };
+const MORE = ['wishlist', 'reglages'];
+const TITLES = { portefeuille: 'Tableau de bord', catalogue: 'Catalogue', collection: 'Collection', import: 'Import', fardes: 'Fardes', series: 'Séries', scelles: 'Scellés', wishlist: 'Wishlist', reglages: 'Réglages', depenses: 'Dépenses',
+  opportunites: 'Opportunités', ventes: 'Ventes', ajout: 'Scan', ajouter: 'Ajouter des items', 'ajouter-carte': 'Ajouter une carte', 'ajouter-scelle': 'Ajouter un scellé', 'import-scelles': 'Import de scellés', ebay: 'Veille eBay' };
 function route() {
   const name = (location.hash || '#portefeuille').slice(1).split('?')[0];
   const key = ROUTES[name] ? name : 'portefeuille';
   const view = ROUTES[key];
-  // L'ajout rapide a sa propre entrée dans le menu, mais vit dans la Collection
-  const top = key === 'ajout' ? 'ajout' : PARENT[key] || key;
+  const top = PARENT[key] || key;
   $$('[data-route]').forEach((a) => {
-    const on = a.dataset.route === top || (a.dataset.route === 'collection' && key === 'ajout' && !$('#nav').offsetParent) || (a.dataset.route === 'plus' && MORE.includes(key));
+    const on = a.dataset.route === top || (a.dataset.route === 'plus' && MORE.includes(key));
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   const sub = $('#subnav'), g = GROUPS[PARENT[key]];
-  sub.hidden = !g;
-  sub.innerHTML = g ? g.map(([k, lab]) => `<a href="#${k}" ${k === key ? 'aria-current="page"' : ''}>${lab}</a>`).join('') : '';
+  sub.hidden = !g && !ADD[key];
+  sub.className = ADD[key] ? 'subnav back' : 'subnav';
+  sub.innerHTML = ADD[key] ? `<a href="#ajouter">← Ajouter des items</a><span>${ADD[key]}</span>`
+    : g ? g.map(([k, lab]) => `<a href="#${k}" ${k === key ? 'aria-current="page"' : ''}>${lab}</a>`).join('') : '';
   closeSheet();
   closeDialog();
   current?.leave?.();
   current = view;
   view.render($('#view'));
-  document.title = key === 'portefeuille' ? 'Farde' : `${TITLES[key]} · Farde`;
+  document.title = key === 'portefeuille' ? 'Farde' : `${TITLES[key] || 'Farde'} · Farde`;
   scrollTo(0, 0);
 }
 

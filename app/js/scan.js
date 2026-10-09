@@ -2,6 +2,9 @@
 // Module pur (testable sous Node) : les accès au catalogue passent par l'objet `src`.
 import { SET_CODES, normLocal } from './match.js';
 
+// Préfixes imprimés sur les promos -> série TCGdex (même table que tcgdex.js, gardée ici pour que ce module reste pur)
+const PROMO_PREFIX = { SVP: 'svp', MEP: 'mep', SWSH: 'swshp', SM: 'smp', XY: 'xyp', BW: 'bwp', HGSS: 'hgssp', DP: 'dpp', NP: 'np' };
+
 // Confusions classiques de la lecture optique dans une zone de chiffres
 const DIGIT = { O: '0', D: '0', Q: '0', U: '0', I: '1', L: '1', J: '1', T: '1', Z: '2', S: '5', B: '8', G: '6', A: '4' };
 const toDigits = (s) => String(s).toUpperCase().replace(/[ODQUILJTZSBGA]/g, (c) => DIGIT[c]);
@@ -43,6 +46,9 @@ export function parseScan(text) {
     m = raw.match(/\b(\d{3})[17](\d{3})\b/) || raw.match(/\b(\d{2})[17](\d{2,3})\b/);
     if (m && +m[1] > 0 && +m[2] >= 10 && +m[1] <= +m[2] + 120) { out.local = m[1]; out.total = parseInt(m[2], 10); return out; }
   }
+  // Promos Épée et Bouclier, Soleil et Lune, XY… : « SWSH050 », « SM210 »
+  m = raw.match(/\b(SWSH|HGSS|SM|XY|BW|DP)\s?-?\s?([0-9OIL]{2,3})\b/);
+  if (m && !out.code) { out.code = m[1]; out.setId = PROMO_PREFIX[m[1]]; out.local = m[1] + toDigits(m[2]); return out; }
   // Promo ou numéro seul : « SVP 085 », « 085 »
   if (out.code) {
     const after = raw.slice(raw.indexOf(out.code) + out.code.length);
@@ -71,7 +77,9 @@ export async function resolveScan(p, src, { lang = 'fr', lockSet = null } = {}) 
   const pick = (c, s) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image || null, setId: s.id, setName: s.name, setTotal: s.cardCount?.official ?? null, lang });
   const lookIn = async (s) => {
     const full = await src.getSet(lang, s.id).catch(() => null);
-    const hit = full?.cards?.find((c) => normLocal(c.localId) === L);
+    // « SWSH050 » est parfois numéroté « 050 » dans le catalogue (et inversement)
+    const digits = normLocal(String(p.local).replace(/^[A-Z]+/, ''));
+    const hit = full?.cards?.find((c) => normLocal(c.localId) === L) || (p.prefix || p.code ? full?.cards?.find((c) => normLocal(String(c.localId).replace(/^[A-Z]+/i, '')) === digits) : null);
     return hit ? pick(hit, s) : null;
   };
   // 1. Série imposée ou code lu sur la carte

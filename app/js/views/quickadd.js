@@ -24,7 +24,7 @@ export function render(el) {
   st.lang = st.lang || S.settings.default_lang || 'fr';
   if (st.binderId === undefined) st.binderId = S.binders[0]?.id || '';
   el.innerHTML = `<section class="view">
-    <div class="vh"><div><h2>Ajout rapide</h2><p>Une ouverture, une pile à ranger : ajoute les cartes à la chaîne (un clic sur la carte, ou le scan de son numéro), puis valide tout d’un coup.</p></div></div>
+    <div class="vh"><div><h2>Scanner ou cliquer tes cartes</h2><p>Scanne le numéro en bas de chaque carte, ou choisis la série ouverte et clique sur les cartes tirées. Elles s’empilent à droite ; rien n’est enregistré avant « Ajouter à ma collection ».</p></div></div>
     <div class="panel qa-opts">
       <div class="field"><label for="qExp">Ouverture ou lot</label><select id="qExp"></select></div>
       <div class="field"><label for="qLang">Langue des cartes</label><select id="qLang">${langOptions(st.lang)}</select></div>

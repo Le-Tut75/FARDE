@@ -5,6 +5,7 @@ const SHELL = ['./', 'index.html', 'css/app.css', 'js/main.js', 'js/store.js', '
   'js/carddialog.js', 'js/config.js', 'js/vendor/supabase.js', 'js/views/dashboard.js', 'js/views/catalogue.js', 'js/views/collection.js',
   'js/views/import.js', 'js/views/binders.js', 'js/views/sets.js', 'js/views/sealed.js', 'js/views/wishlist.js', 'js/views/settings.js', 'js/views/expenses.js', 'js/views/opportunities.js',
   'js/views/sales.js', 'js/views/quickadd.js', 'js/search.js', 'js/sell.js', 'js/scan.js', 'js/ocr.js', 'js/excel.js', 'vitrine.html', 'js/vitrine.js',
+  'js/quick.js', 'js/ebayscore.js', 'js/views/addhub.js', 'js/views/addcard.js', 'js/views/importsealed.js', 'js/views/ebay.js',
   'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

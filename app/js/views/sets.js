@@ -2,6 +2,7 @@ import { S } from '../store.js';
 import { getSetsNewestFirst, getSet, getCard, getSeriesGroups } from '../tcgdex.js';
 import { cmPrice } from '../valuation.js';
 import { openCard } from '../carddialog.js';
+import { plusBtn, quickAddCard, bindPlus } from '../quick.js';
 import { esc, eur, cardImg, langOptions, frDate, pool, setPicker, $ } from '../ui.js';
 
 const st = { lang: null, set: '', show: 'all', seq: 0 };
@@ -24,6 +25,7 @@ export function render(el) {
   $('#xLang', root).onchange = () => { st.lang = $('#xLang', root).value; st.set = ''; fill(); };
   setPicker($('#xSet', root), () => getSeriesGroups(st.lang), (s) => { if (s) { st.set = s.id; load(); } }, { allLabel: 'Tape le nom d’une série…' });
   $('#xShow', root).onchange = () => { st.show = $('#xShow', root).value; load(); };
+  bindPlus($('#xGrid', root), (b) => quickAddCard(st.lang, b.dataset.id).then(load));
   $('#xGrid', root).addEventListener('click', (e) => { const b = e.target.closest('.c[data-id]'); if (b) openCard(st.lang, b.dataset.id); });
   fill();
 }
@@ -59,7 +61,7 @@ async function load() {
     <div class="progress" style="margin-top:10px"><i style="width:${cards.length ? (have / cards.length) * 100 : 0}%"></i></div>
     <div class="row" style="margin-top:10px"><button class="btn sm" id="xCost">Estimer le coût des manquantes</button><span class="note" id="xCostOut"></span></div>`;
   $('#xGrid', root).innerHTML = cards.filter((c) => st.show === 'all' || (st.show === 'own') === owned.has(c.id))
-    .map((c) => `<button class="c ${owned.has(c.id) ? '' : 'miss'}" data-id="${esc(c.id)}" title="${esc(c.name)}">${cardImg(c.image, c.name)}<span>${esc(c.localId)}</span></button>`).join('') || `<div class="empty">Rien à afficher.</div>`;
+    .map((c) => `<button class="c ${owned.has(c.id) ? '' : 'miss'}" data-id="${esc(c.id)}" title="${esc(c.name)}">${cardImg(c.image, c.name)}<span>${esc(c.localId)}</span>${plusBtn()}</button>`).join('') || `<div class="empty">Rien à afficher.</div>`;
   $('#xCost', root).onclick = async (e) => {
     e.target.disabled = true;
     const miss = cards.filter((c) => !owned.has(c.id)), out = $('#xCostOut', root);

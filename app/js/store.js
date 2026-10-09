@@ -2,7 +2,7 @@
 import { createClient } from './vendor/supabase.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { DEFAULT_SETTINGS, DEFAULT_COND, cardKey, portfolio, lineCalc, sealedCalc, parisDay, cmPrice, resolveCm, expenseCalc, round2 } from './valuation.js';
-import { getCard } from './tcgdex.js';
+import { getCard, loadSerieMap, imageOf } from './tcgdex.js';
 import { pool } from './ui.js';
 
 // On ne garde que https://xxxx.supabase.co, même si l'adresse copiée contient /rest/v1 ou un / final
@@ -105,11 +105,24 @@ export async function loadAll() {
     saveSnapshot();
     emit();
     refreshLivePrices();
+    fixImages();
     return true;
   } catch (e) {
     if (loadSnapshot()) { S.offline = true; emit(); return false; }
     throw e;
   }
+}
+
+/** Lignes sans image (carte sans visuel dans sa langue) : on prend le visuel anglais et on l'enregistre. */
+async function fixImages() {
+  const todo = [...S.cards.map((l) => ['collection', l]), ...S.wish.map((w) => ['wishlist', w])].filter(([, l]) => !l.image);
+  if (!todo.length) return;
+  await loadSerieMap();
+  const fixed = [];
+  for (const [t, l] of todo) { const im = imageOf(l.card_id, l.local_id, null); if (im) { l.image = im; fixed.push([t, l]); } }
+  if (!fixed.length) return;
+  emit();
+  await pool(fixed.slice(0, 300), 4, ([t, l]) => sb.from(t).update({ image: l.image }).eq('id', l.id));
 }
 
 /** Cotes de la tâche quotidienne pour les cartes et scellés suivis. */
@@ -293,6 +306,22 @@ export async function addSealed(row) {
     if (p) S.sealedPrices.set(Number(p.id), p);
   }
   emit(); return r;
+}
+/** Import de scellés en masse. */
+export async function bulkInsertSealed(rows, onProgress) {
+  guard();
+  const out = [];
+  for (let i = 0; i < rows.length; i += 200) {
+    const data = must(await sb.from('sealed').insert(rows.slice(i, i + 200), { defaultToNull: false }).select(), 'Import');
+    out.push(...data); S.sealed.push(...data);
+    onProgress?.(Math.min(i + 200, rows.length), rows.length);
+  }
+  const ids = [...new Set(out.filter((r) => r.cm_id != null && !S.sealedPrices.has(Number(r.cm_id))).map((r) => Number(r.cm_id)))];
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data } = await sb.from('cm_sealed').select('*').in('id', ids.slice(i, i + 150));
+    for (const r of data || []) S.sealedPrices.set(Number(r.id), r);
+  }
+  emit(); return out;
 }
 export async function updateSealed(id, patch) {
   guard();

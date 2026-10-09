@@ -2,6 +2,7 @@
 import { S, sb, ownedQty } from '../store.js';
 import { openCard } from '../carddialog.js';
 import { esc, eur, cardImg, frDateTime, num, $ } from '../ui.js';
+import { plusBtn, quickAddCard, bindPlus } from '../quick.js';
 
 const st = { rows: null, q: '', min: '', max: '', drop: '15', sort: 'drop', img: false, mine: false };
 let root;
@@ -30,6 +31,7 @@ export function render(el) {
   $('#oDrop', root).value = st.drop; $('#oSort', root).value = st.sort;
   const bind = (id, key, ev = 'input') => $(id, root).addEventListener(ev, (e) => { st[key] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; draw(); });
   bind('#oQ', 'q'); bind('#oMin', 'min'); bind('#oMax', 'max'); bind('#oDrop', 'drop', 'change'); bind('#oSort', 'sort', 'change'); bind('#oImg', 'img', 'change'); bind('#oMine', 'mine', 'change');
+  bindPlus($('#oGrid', root), (t) => quickAddCard(t.dataset.lang, t.dataset.card).then(draw));
   $('#oGrid', root).addEventListener('click', (e) => {
     const t = e.target.closest('[data-card]');
     if (t) openCard(t.dataset.lang, t.dataset.card);
@@ -71,7 +73,7 @@ function draw() {
   $('#oGrid', root).innerHTML = L.slice(0, 120).map((r) => {
     const name = r.name_fr || r.name;
     const own = r.card_id ? ownedQty(r.lang, r.card_id) : 0;
-    const inner = `<div class="img">${cardImg(r.image, name)}<span class="badge down">${String(r.drop_pct).replace('.', ',')} %</span>${own ? `<span class="badge own-l">×${own}</span>` : ''}</div>
+    const inner = `<div class="img">${cardImg(r.image, name)}<span class="badge down">${String(r.drop_pct).replace('.', ',')} %</span>${own ? `<span class="badge own-l">×${own}</span>` : ''}${r.card_id ? plusBtn() : ''}</div>
       <div class="t1 ellip">${esc(name)}</div>
       <div class="t2"><span class="ellip">${esc(r.set_name || 'Série non identifiée')}${r.local_id ? ' · ' + esc(r.local_id) : ''}</span></div>
       <div class="t2"><b class="num">${eur(r.trend)}</b><span class="num">moy. 30 j <s>${eur(r.avg30)}</s></span></div>`;

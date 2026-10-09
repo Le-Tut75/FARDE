@@ -1,6 +1,8 @@
 import { S, calcLine, deleteCards, moveCards, moveToExpense } from '../store.js';
 import { variantLabel } from '../valuation.js';
 import { openCard } from '../carddialog.js';
+import { isPromoSet } from '../tcgdex.js';
+import { setIdOf } from '../match.js';
 import { esc, eur, signEur, pct, plClass, cardImg, LANGS, toast, download, toCsv, csvNum, today, confirmButton, $, $$ } from '../ui.js';
 
 const st = { q: '', lang: '', binder: '', type: '', sort: { k: 'value', d: -1 }, sel: new Set(), limit: 200 };
@@ -10,13 +12,13 @@ export function render(el) {
   const qp = new URLSearchParams(location.hash.split('?')[1] || '');
   if (qp.has('type')) st.type = qp.get('type');
   el.innerHTML = `<section class="view">
-    <div class="vh"><div><h2>Collection</h2><p>Chaque ligne a son prix d’achat, son état et sa plus-value en direct.</p></div>
-      <div class="row"><button class="btn" id="kXlsx">Excel</button><button class="btn" id="kCsv">CSV</button><a class="btn" href="#ajout?mode=scan"><svg class="ic"><use href="#i-scan"/></svg>Scanner</a><a class="btn pri" href="#catalogue">Ajouter des cartes</a></div></div>
+    <div class="vh"><div><h2>Mes cartes</h2><p>Clique sur une ligne pour la modifier ou la vendre. Coche plusieurs lignes pour les déplacer ou les rattacher à une ouverture.</p></div>
+      <div class="row"><button class="btn" id="kXlsx">Exporter Excel</button><button class="btn" id="kCsv">CSV</button><a class="btn pri" href="#ajouter"><svg class="ic"><use href="#i-plus"/></svg>Ajouter des cartes</a></div></div>
     <div class="row panel">
       <div class="field" style="flex:2 1 200px"><label for="kQ">Filtrer</label><input id="kQ" type="search" placeholder="Nom, série, numéro…" value="${esc(st.q)}"></div>
       <div class="field" style="flex:1 1 120px"><label for="kLang">Langue</label><select id="kLang"></select></div>
       <div class="field" style="flex:1 1 140px"><label for="kBind">Farde</label><select id="kBind"></select></div>
-      <div class="field" style="flex:1 1 130px"><label for="kType">Type</label><select id="kType"><option value="">Tout</option><option value="raw">Non gradées</option><option value="graded">Gradées</option><option value="noprice">Sans cote</option><option value="nobuy">Sans prix d’achat</option><option value="check">À coter</option></select></div>
+      <div class="field" style="flex:1 1 130px"><label for="kType">Type</label><select id="kType"><option value="">Tout</option><option value="raw">Loose (non gradées)</option><option value="graded">Gradées</option><option value="noprice">Sans cote</option><option value="nobuy">Sans prix d’achat</option><option value="check">À coter</option><option value="promo">Promos</option></select></div>
     </div>
     <div class="tw"><table class="resp" id="kTable"><thead><tr>
       <th class="c-chk"><input type="checkbox" id="kAll" aria-label="Tout sélectionner"></th><th></th><th data-s="name">Carte</th><th data-s="set">Série</th><th data-s="lang">Lang.</th><th data-s="cond">État</th>
@@ -89,6 +91,7 @@ function filtered() {
     if (st.type === 'noprice' && calcLine(l).value != null) return false;
     if (st.type === 'nobuy' && l.buy_price != null) return false;
     if (st.type === 'check' && !calcLine(l).toCheck) return false;
+    if (st.type === 'promo' && !isPromoSet(l.set_id || setIdOf(l.card_id), l.set_name)) return false;
     return true;
   });
 }
@@ -101,7 +104,7 @@ function body() {
   rows.sort((a, b) => { const A = key(a), B = key(b); return (typeof A === 'string' ? A.localeCompare(B, 'fr') : A - B) * st.sort.d; });
   const tb = $('#kTable tbody', root);
   if (!S.cards.length) {
-    tb.innerHTML = `<tr><td colspan="11"><div class="empty">Ta collection est vide. <a href="#ajout?mode=scan">Scanne tes cartes</a>, cherche-les dans le <a href="#catalogue">Catalogue</a> ou <a href="#import">importe ton tableur</a>.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="11"><div class="empty">Aucune carte pour l’instant. <a href="#ajouter">Ajoute tes cartes</a> : tableau, recherche ou scan.</div></td></tr>`;
     $('#kTable tfoot', root).innerHTML = ''; $('#kMore', root).hidden = true; bulkBar(); return;
   }
   const shown = rows.slice(0, st.limit);

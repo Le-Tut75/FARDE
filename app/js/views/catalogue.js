@@ -1,13 +1,14 @@
 import { S, ownedQty } from '../store.js';
-import { getSets, getCard, searchAny, groupsFor, LANG_ORDER } from '../tcgdex.js';
+import { getSets, getCard, searchAny, groupsFor, LANG_ORDER, isPromoSet, promoSets } from '../tcgdex.js';
 import { cmPrice } from '../valuation.js';
 import { norm, setIdOf } from '../match.js';
 import { openCard } from '../carddialog.js';
 import { esc, eur, cardImg, LANGS, pool, combo, setPicker, $ } from '../ui.js';
+import { plusBtn, quickAddCard, bindPlus } from '../quick.js';
 
 const PER = 24;
 const MAX_DETAILS = 400;   // au-delà, on demande d'affiner avant de charger raretés et cotes
-const st = { q: '', mode: 'name', lang: 'all', set: null, sort: 'def', rarity: '', exact: false, page: 1, list: [], details: new Map(), seq: 0, loading: false };
+const st = { q: '', mode: 'name', lang: 'all', set: null, sort: 'def', rarity: '', promo: '', exact: false, page: 1, list: [], details: new Map(), seq: 0, loading: false };
 let root;
 
 const dkey = (it) => `${it.lang}:${it.id}`;
@@ -15,7 +16,7 @@ const langOpts = (sel) => `<option value="all" ${sel === 'all' ? 'selected' : ''
 
 export function render(el) {
   el.innerHTML = `<section class="view">
-    <div class="vh"><div><h2>Catalogue</h2><p>Toutes les cartes Pokémon, dans toutes les langues. Tape un nom : les cartes s’affichent pendant la frappe.</p></div></div>
+    <div class="vh"><div><h2>Catalogue</h2><p>Toutes les cartes Pokémon, dans toutes les langues, avec leur cote. Le « + » d’une carte l’ajoute à ta collection.</p></div></div>
     <form class="panel search" id="cForm">
       <div class="field q"><label for="cQ">Recherche</label><input id="cQ" type="search" placeholder="Dracaufeu, Charizard, 199, Mitsuhiro Arita…" value="${esc(st.q)}" enterkeyhint="search"></div>
       <div class="field"><label for="cMode">Par</label><select id="cMode"><option value="name">Nom</option><option value="num">Numéro</option><option value="illu">Illustrateur</option></select></div>
@@ -26,7 +27,9 @@ export function render(el) {
     </form>
     <div class="row between">
       <div class="row"><label class="row small" style="gap:6px"><input type="checkbox" id="cExact" ${st.exact ? 'checked' : ''}> Nom exact</label>
-        <label class="row small" style="gap:6px">Rareté <select id="cRarity" style="width:auto;min-width:180px" disabled><option value="">Toutes</option></select></label></div>
+        <label class="row small" style="gap:6px">Rareté <select id="cRarity" style="width:auto;min-width:180px" disabled><option value="">Toutes</option></select></label>
+        <label class="row small" style="gap:6px">Promos <select id="cPromo" style="width:auto"><option value="">Avec les promos</option><option value="only">Promos uniquement</option><option value="none">Sans les promos</option></select></label>
+        <button type="button" class="btn sm" id="cPromos">Parcourir les promos</button></div>
       <span id="cStatus" class="muted small"></span>
     </div>
     <div class="cards" id="cGrid"></div>
@@ -60,8 +63,14 @@ export function render(el) {
   $('#cForm', root).onsubmit = (e) => { e.preventDefault(); qc.close(); st.page = 1; search(); };
   $('#cSort', root).onchange = () => { st.sort = $('#cSort', root).value; st.page = 1; draw(); };
   $('#cRarity', root).onchange = () => { st.rarity = $('#cRarity', root).value; st.page = 1; draw(); };
+  $('#cPromo', root).value = st.promo;
+  $('#cPromo', root).onchange = () => { st.promo = $('#cPromo', root).value; st.page = 1; draw(); };
+  // Raccourci : ouvre le choix de série directement sur le groupe « Promos »
+  $('#cPromos', root).onclick = () => { const i = $('#cSet', root); i.value = 'Promos'; i.focus(); i.dispatchEvent(new Event('input')); };
+  Promise.all([promoSets('fr'), promoSets('en'), promoSets('ja')]).then(() => { if (st.list.length) draw(); });
   $('#cPrev', root).onclick = () => { st.page--; draw(); scrollTo(0, 0); };
   $('#cNext', root).onclick = () => { st.page++; draw(); scrollTo(0, 0); };
+  bindPlus($('#cGrid', root), (t) => quickAddCard(t.dataset.lang, t.dataset.id).then(() => tile(st.list.find((x) => x.id === t.dataset.id && x.lang === t.dataset.lang))));
   $('#cGrid', root).addEventListener('click', (e) => { const t = e.target.closest('.tile'); if (t) openCard(t.dataset.lang, t.dataset.id); });
   if (st.list.length) { draw(); rarities(); }
   else $('#cStatus', root).textContent = 'Tape le nom d’une carte, ou choisis une série pour la parcourir en entier.';
@@ -119,7 +128,9 @@ function rarities() {
 }
 
 function filtered() {
-  return st.rarity ? st.list.filter((it) => st.details.get(dkey(it))?.rarity === st.rarity) : st.list;
+  let L = st.rarity ? st.list.filter((it) => st.details.get(dkey(it))?.rarity === st.rarity) : st.list;
+  if (st.promo) L = L.filter((it) => isPromoSet(setIdOf(it.id)) === (st.promo === 'only'));
+  return L;
 }
 function sorted() {
   const L = filtered().slice();
@@ -135,8 +146,8 @@ function draw() {
   st.page = Math.min(Math.max(1, st.page), pages);
   const items = all.slice((st.page - 1) * PER, st.page * PER);
   $('#cStatus', root).textContent = all.length ? count() + (st.loading && st.sort !== 'def' ? ' · tri en cours…' : '')
-    : (st.list.length ? 'Aucune carte de cette rareté.' : 'Aucune carte trouvée. Essaie une recherche partielle, ou « Toutes les langues ».');
-  $('#cGrid', root).innerHTML = items.map((it) => `<button class="tile" data-id="${esc(it.id)}" data-lang="${it.lang}"><div class="img">${cardImg(it.image, it.name)}${st.lang === 'all' ? `<span class="langtag">${it.lang}</span>` : ''}<span class="own"></span></div>
+    : (st.list.length ? (st.promo ? (st.promo === 'only' ? 'Aucune promo dans ces résultats.' : 'Uniquement des promos dans ces résultats.') : 'Aucune carte de cette rareté.') : 'Aucune carte trouvée. Essaie une recherche partielle, ou « Toutes les langues ».');
+  $('#cGrid', root).innerHTML = items.map((it) => `<button class="tile" data-id="${esc(it.id)}" data-lang="${it.lang}"><div class="img">${cardImg(it.image, it.name)}${st.lang === 'all' ? `<span class="langtag">${it.lang}</span>` : ''}<span class="own"></span>${plusBtn()}</div>
     <div class="t1 ellip">${esc(it.name)}</div><div class="t2"><span class="num">${esc(it.localId)}</span><b class="num pr">…</b></div></button>`).join('');
   $('#cPager', root).hidden = pages <= 1;
   $('#cPrev', root).disabled = st.page <= 1; $('#cNext', root).disabled = st.page >= pages;
@@ -145,6 +156,7 @@ function draw() {
 }
 
 function tile(it) {
+  if (!it) return;
   const el = root?.querySelector(`.tile[data-id="${CSS.escape(it.id)}"][data-lang="${it.lang}"]`);
   if (!el) return;
   const p = priceOf(it);
