@@ -13,7 +13,7 @@ export function render(el) {
   if (qp.has('type')) st.type = qp.get('type');
   el.innerHTML = `<section class="view">
     <div class="vh"><div><h2>Mes cartes</h2><p>Clique sur une ligne pour la modifier ou la vendre. Coche plusieurs lignes pour les déplacer ou les rattacher à une ouverture.</p></div>
-      <div class="row"><button class="btn" id="kXlsx">Exporter Excel</button><button class="btn" id="kCsv">CSV</button><a class="btn pri" href="#ajouter"><svg class="ic"><use href="#i-plus"/></svg>Ajouter des cartes</a></div></div>
+      <div class="row"><button class="btn" id="kXlsx">Exporter Excel</button><button class="btn" id="kCsv">CSV</button><a class="btn" href="#importer">Importer / scanner</a><a class="btn pri" href="#ajouter?t=cartes"><svg class="ic"><use href="#i-plus"/></svg>Ajouter des cartes</a></div></div>
     <div class="row panel">
       <div class="field" style="flex:2 1 200px"><label for="kQ">Filtrer</label><input id="kQ" type="search" placeholder="Nom, série, numéro…" value="${esc(st.q)}"></div>
       <div class="field" style="flex:1 1 120px"><label for="kLang">Langue</label><select id="kLang"></select></div>
@@ -104,7 +104,7 @@ function body() {
   rows.sort((a, b) => { const A = key(a), B = key(b); return (typeof A === 'string' ? A.localeCompare(B, 'fr') : A - B) * st.sort.d; });
   const tb = $('#kTable tbody', root);
   if (!S.cards.length) {
-    tb.innerHTML = `<tr><td colspan="11"><div class="empty">Aucune carte pour l’instant. <a href="#ajouter">Ajoute tes cartes</a> : tableau, recherche ou scan.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="11"><div class="empty">Aucune carte pour l’instant. Clique sur <a href="#ajouter?t=cartes">Ajouter</a> (bouton « + » sur chaque carte), ou <a href="#importer">importe un tableau / scanne-les</a>.</div></td></tr>`;
     $('#kTable tfoot', root).innerHTML = ''; $('#kMore', root).hidden = true; bulkBar(); return;
   }
   const shown = rows.slice(0, st.limit);

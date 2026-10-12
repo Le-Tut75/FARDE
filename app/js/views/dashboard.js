@@ -11,7 +11,7 @@ let root, filter = 'all';
 export function render(el) {
   el.innerHTML = `<section class="view">
     <div class="vh"><div><h2>Tableau de bord</h2><p id="dSub"></p></div>
-      <div class="row"><div class="status" id="dJob"></div><a class="btn pri" href="#ajouter"><svg class="ic"><use href="#i-plus"/></svg>Importer mes cartes &amp; items scellés</a></div></div>
+      <div class="row"><div class="status" id="dJob"></div><a class="btn" href="#importer">Importer / scanner</a><a class="btn pri" href="#ajouter"><svg class="ic"><use href="#i-plus"/></svg>Ajouter</a></div></div>
     <div class="seg" id="dFilt" role="tablist">${FILTERS.map(([k, l]) => `<button type="button" data-f="${k}" role="tab">${l} <span class="num" data-n="${k}"></span></button>`).join('')}</div>
     <div class="dash" id="dMain">
       <div class="worth">
@@ -35,7 +35,7 @@ export function render(el) {
     </div>
     <div class="empty-dash panel" id="dEmpty" hidden>
       <h3>Ton tableau de bord est vide</h3><p class="muted">Ajoute tes cartes et tes produits scellés : la valeur, la plus-value et les hausses du mois s’afficheront ici.</p>
-      <a class="btn pri" href="#ajouter"><svg class="ic"><use href="#i-plus"/></svg>Importer mes cartes &amp; items scellés</a>
+      <div class="row"><a class="btn pri" href="#ajouter?t=cartes"><svg class="ic"><use href="#i-plus"/></svg>Ajouter une carte</a><a class="btn pri" href="#ajouter?t=scelles"><svg class="ic"><use href="#i-plus"/></svg>Ajouter un scellé</a><a class="btn" href="#importer">Importer un tableau / scanner</a></div>
     </div>
     <div class="panel chart" id="dChartP"><div class="row between"><h3 id="dChartT">Évolution de la valeur</h3><span class="muted small" id="dRange"></span></div><div id="dChart"></div></div>
     <div class="grid2" id="dGrid">

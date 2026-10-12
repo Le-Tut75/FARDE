@@ -57,20 +57,20 @@ export function sealedImg(url, alt = '', cls = '') {
 
 const st = { q: '', type: '', set: null, order: '', seq: 0, results: [] };
 
-export function render(el, { addOnly = false } = {}) {
+export function render(el, opts = {}) {
   const qp = new URLSearchParams(location.hash.split('?')[1] || '');
-  if (addOnly && qp.has('q')) { st.q = qp.get('q'); st.type = ''; st.set = null; }
-  el.innerHTML = `<section class="view">
-    ${addOnly ? `<div class="vh"><div><h2>Ajouter un produit scellé</h2><p>Cherche ton produit (le nom français marche) : le « + » l’ajoute directement, un clic sur la photo ouvre sa fiche pour saisir prix et quantité.</p></div>
-      <button class="btn" id="sCustom">Produit hors catalogue</button></div>`
-    : `<div class="vh"><div><h2>Produits scellés</h2><p>Displays, ETB, coffrets, blisters : cote Cardmarket mise à jour chaque matin.</p></div>
-      <div class="row"><a class="btn" href="#import-scelles">Importer un tableur</a><a class="btn pri" href="#ajouter-scelle"><svg class="ic"><use href="#i-plus"/></svg>Ajouter un scellé</a></div></div>
+  const emb = !!opts.embedded;
+  const jump = !emb && qp.has('q');
+  if (qp.has('q')) { st.q = qp.get('q'); st.type = ''; st.set = null; }
+  el.innerHTML = `<section class="${emb ? 'stack' : 'view'}">
+    ${emb ? `<div class="row between"><span class="muted small">Pas dans le catalogue ? <button type="button" class="linkbtn" id="sCustom">Produit hors catalogue</button></span><a class="small" href="#scelles">Voir mes scellés</a></div>` : `<div class="vh"><div><h2>Produits scellés</h2><p>Displays, ETB, coffrets, blisters : cote Cardmarket mise à jour chaque matin. Pour ajouter un produit, cherche-le dans le catalogue ci-dessous : « + » l’ajoute directement, un clic ouvre sa fiche (prix, quantité).</p></div>
+      <div class="row"><button class="btn" id="sCustom">Produit hors catalogue</button><a class="btn" href="#import-scelles">Importer un tableau</a><a class="btn pri" href="#ajouter?t=scelles"><svg class="ic"><use href="#i-plus"/></svg>Ajouter un scellé</a></div></div>
     <div class="tw"><table class="resp nochk" id="sTable"><thead><tr>
       <th></th><th>Produit</th><th>Type</th><th>Lang.</th><th class="r">Qté</th><th class="r">Achat u.</th><th class="r">Cote u.</th><th class="r">Valeur</th><th class="r">P&amp;L</th>
     </tr></thead><tbody></tbody><tfoot></tfoot></table></div>`}
 
-    ${!addOnly ? '' : `<div class="panel stack" id="sCat">
-      <div class="row between"><h3>Catalogue des scellés</h3><span class="muted small" id="sCount"></span></div>
+    <div class="panel stack" id="sCat">
+      <div class="row between"><h3>${emb ? 'Chercher un produit scellé' : 'Catalogue des scellés'}</h3><span class="muted small" id="sCount"></span></div>
       <div class="filters">
         <div class="field q"><label for="sQ">Recherche</label><input id="sQ" type="search" placeholder="ETB Flammes Fantasmagoriques, display 151…" value="${esc(st.q)}" autocomplete="off" enterkeyhint="search"></div>
         <div class="field"><label for="sType">Type</label><select id="sType">${TYPES.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
@@ -79,18 +79,15 @@ export function render(el, { addOnly = false } = {}) {
       <div class="row between"><span class="muted small" id="sInfo"></span>
         <label class="row small" style="gap:6px">Tri <select id="sOrder" style="width:auto"><option value="">Pertinence</option><option value="new">Nouveautés</option><option value="price_desc">Prix décroissant</option><option value="price_asc">Prix croissant</option></select></label></div>
       <div class="sgrid" id="sRes"></div>
-    </div>`}
-    <p class="note">La cote Cardmarket d’un produit scellé regroupe les langues européennes (les produits japonais, chinois et coréens ont leur propre fiche). Pour une cote différente, saisis une cote manuelle. Photos : catalogue TCGplayer, rapprochées automatiquement.</p>
+    </div>
+    ${emb ? '' : `<p class="note">La cote Cardmarket d’un produit scellé regroupe les langues européennes (les produits japonais, chinois et coréens ont leur propre fiche). Pour une cote différente, saisis une cote manuelle. Photos : catalogue TCGplayer, rapprochées automatiquement.</p>`}
   </section>`;
   root = el.firstElementChild;
-  if (!addOnly) {
-    $('#sTable tbody', root).addEventListener('click', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) { const s = S.sealed.find((x) => x.id === tr.dataset.id); if (s) editDialog(s); } });
-    update(); return;
-  }
+  $('#sTable tbody', root)?.addEventListener('click', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) { const s = S.sealed.find((x) => x.id === tr.dataset.id); if (s) editDialog(s); } });
   $('#sType', root).value = st.type; $('#sOrder', root).value = st.order;
   $('#sCustom', root).onclick = () => editDialog(null, null);
-  bindPlus($('#sRes', root), (b) => quickAddSealed(st.results[+b.dataset.k]));
-  setTimeout(() => $('#sQ', root)?.focus(), 50);
+  bindPlus($('#sRes', root), (b) => quickAddSealed(st.results[+b.dataset.k]).then(() => browseMarks()));
+  if (jump) setTimeout(() => { $('#sCat', root)?.scrollIntoView(); $('#sQ', root)?.focus({ preventScroll: true }); }, 80);
   let t;
   $('#sQ', root).addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { st.q = $('#sQ', root).value.trim(); browse(); }, 300); });
   $('#sQ', root).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); st.q = e.target.value.trim(); browse(); } });
@@ -128,11 +125,18 @@ async function browse() {
   } catch (e) { if (my === st.seq) res.innerHTML = `<p class="loss">${esc(e.message)}</p>`; }
 }
 
+/** Pastille « Possédé » sur les produits du catalogue après un ajout. */
+function browseMarks() {
+  root?.querySelectorAll('#sRes .stile[data-k]').forEach((t) => {
+    const r = st.results[+t.dataset.k];
+    if (r && !t.querySelector('.pill.ok') && S.sealed.some((x) => Number(x.cm_id) === Number(r.id))) t.querySelector('.t1')?.insertAdjacentHTML('afterend', '<span class="pill ok" style="align-self:flex-start">Possédé</span>');
+  });
+}
 export function update() {
   if (!root?.isConnected || !$('#sTable', root)) return;
   const tb = $('#sTable tbody', root);
   if (!S.sealed.length) {
-    tb.innerHTML = `<tr><td colspan="9"><div class="empty">Aucun scellé dans ta collection. Cherche un produit dans le catalogue ci-dessous et clique dessus pour l’ajouter.</div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="9"><div class="empty">Aucun scellé dans ta collection. Clique sur « Ajouter un scellé », ou cherche un produit dans le catalogue ci-dessous.</div></td></tr>`;
     $('#sTable tfoot', root).innerHTML = ''; return;
   }
   const rows = S.sealed.map((s) => ({ s, c: calcSealed(s) })).sort((a, b) => (b.c.value || 0) - (a.c.value || 0));

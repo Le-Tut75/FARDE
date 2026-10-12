@@ -485,7 +485,6 @@ details.more[open] summary::before{content:"−"}
 @media (max-width:700px){.presets{grid-template-columns:1fr}}
 .presets .wbtn{text-align:left;cursor:pointer;font:inherit}
 .setup code,.sub code{font-size:12px;background:var(--sunk);padding:1px 5px;border-radius:5px}
-@media (max-width:900px){.vh .btn.pri[href="#ajouter"]{display:none}}
 
 /* v1.6 : score des annonces eBay */
 .score{position:absolute;left:7px;bottom:7px;min-width:34px;height:26px;padding:0 7px;border-radius:99px;display:grid;place-items:center;font:700 13px var(--f-body);color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25)}
@@ -504,3 +503,12 @@ table.mini tr.tot td{font-weight:700;border-bottom:0;padding-top:9px}
 .chip:hover{border-color:var(--ink)}
 .chip[aria-pressed="true"]{background:var(--btn);color:var(--on-btn);border-color:var(--btn)}
 .tcgp{object-fit:contain!important;background:#fff}
+.hub-alt{margin-top:14px;padding-top:12px;border-top:1px solid var(--line-soft)}
+
+/* v1.11 : onglet Ajouter */
+.addseg{margin:-4px 0 2px}
+.addseg button{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;font-size:15px}
+.addseg svg.ic{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.addv #addInner{display:flex;flex-direction:column;gap:16px}
+.linkbtn{border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.tabbar a.tab-add svg{background:var(--btn);color:var(--on-btn);border-radius:9px;padding:3px;width:26px;height:26px;margin-top:-3px}

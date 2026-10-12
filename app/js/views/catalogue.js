@@ -1,10 +1,11 @@
 import { S, ownedQty } from '../store.js';
-import { getSets, getCard, searchAny, groupsFor, LANG_ORDER, isPromoSet, promoSets } from '../tcgdex.js';
+import { getSets, getSet, getCard, searchAny, groupsFor, LANG_ORDER, isPromoSet, promoSets } from '../tcgdex.js';
 import { cmPrice } from '../valuation.js';
 import { norm, setIdOf } from '../match.js';
 import { openCard } from '../carddialog.js';
 import { esc, eur, cardImg, LANGS, pool, combo, setPicker, $ } from '../ui.js';
 import { plusBtn, quickAddCard, bindPlus } from '../quick.js';
+import { parseScan, resolveScan } from '../scan.js';
 
 const PER = 24;
 const MAX_DETAILS = 400;   // au-delà, on demande d'affiner avant de charger raretés et cotes
@@ -14,9 +15,12 @@ let root;
 const dkey = (it) => `${it.lang}:${it.id}`;
 const langOpts = (sel) => `<option value="all" ${sel === 'all' ? 'selected' : ''}>Toutes les langues</option>` + LANG_ORDER.map((k) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${LANGS[k]}</option>`).join('');
 
-export function render(el) {
-  el.innerHTML = `<section class="view">
-    <div class="vh"><div><h2>Catalogue</h2><p>Toutes les cartes Pokémon, dans toutes les langues, avec leur cote. Le « + » d’une carte l’ajoute à ta collection.</p></div></div>
+export function render(el, opts = {}) {
+  const qp = new URLSearchParams(location.hash.split('?')[1] || '');
+  const fromLink = qp.has('q');
+  if (fromLink) { st.q = qp.get('q'); st.set = null; st.mode = 'name'; }
+  el.innerHTML = `<section class="${opts.embedded ? 'stack' : 'view'}">
+    ${opts.embedded ? '' : `<div class="vh"><div><h2>Catalogue des cartes</h2><p>Cherche une carte par nom, numéro (199/165, SVP 85…), série, rareté ou promo. Le « + » l’ajoute directement à ta collection ; un clic sur la carte ouvre sa fiche (version, état, prix d’achat).</p></div></div>`}
     <form class="panel search" id="cForm">
       <div class="field q"><label for="cQ">Recherche</label><input id="cQ" type="search" placeholder="Dracaufeu, Charizard, 199, Mitsuhiro Arita…" value="${esc(st.q)}" enterkeyhint="search"></div>
       <div class="field"><label for="cMode">Par</label><select id="cMode"><option value="name">Nom</option><option value="num">Numéro</option><option value="illu">Illustrateur</option></select></div>
@@ -72,7 +76,8 @@ export function render(el) {
   $('#cNext', root).onclick = () => { st.page++; draw(); scrollTo(0, 0); };
   bindPlus($('#cGrid', root), (t) => quickAddCard(t.dataset.lang, t.dataset.id).then(() => tile(st.list.find((x) => x.id === t.dataset.id && x.lang === t.dataset.lang))));
   $('#cGrid', root).addEventListener('click', (e) => { const t = e.target.closest('.tile'); if (t) openCard(t.dataset.lang, t.dataset.id); });
-  if (st.list.length) { draw(); rarities(); }
+  if (fromLink && st.q) search();
+  else if (st.list.length) { draw(); rarities(); }
   else $('#cStatus', root).textContent = 'Tape le nom d’une carte, ou choisis une série pour la parcourir en entier.';
 }
 
@@ -84,7 +89,15 @@ async function search() {
   $('#cStatus', root).innerHTML = `<span class="spin"></span> Recherche…`;
   $('#cGrid', root).innerHTML = '';
   try {
-    const list = await searchAny(st.lang, { q: st.q, mode: st.mode, exact: st.exact, setId: st.set?.id || null }, S.settings.default_lang || 'fr');
+    let list = [];
+    // « 199/165 », « MEW 199 », « SVP 85 », « SWSH050 » : la carte exacte, comme au scan
+    const p = st.mode === 'name' && !st.set && st.q ? parseScan(st.q) : null;
+    if (p?.local && (p.total || p.setId)) {
+      const lang = st.lang === 'all' ? (p.lang || S.settings.default_lang || 'fr') : st.lang;
+      const r = await resolveScan(p, { getSets, getSet }, { lang }).catch(() => null);
+      list = (r?.candidates || []).map((c) => ({ id: c.id, localId: c.localId, name: c.name, image: c.image, lang }));
+    }
+    if (!list.length) list = await searchAny(st.lang, { q: st.q, mode: st.mode, exact: st.exact, setId: st.set?.id || null }, S.settings.default_lang || 'fr');
     if (my !== st.seq) return;
     st.list = list;
     rarities(); draw(); loadDetails(my);

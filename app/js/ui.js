@@ -208,7 +208,8 @@ export function combo(input, { source, render, onPick, minChars = 0, debounce = 
   list.addEventListener('click', (e) => { const el = e.target.closest('[data-i]'); if (el) pick(+el.dataset.i); });
   input.addEventListener('blur', () => setTimeout(close, 150));
   function pick(i) { const it = items[i]; close(); clearTimeout(timer); seq++; onPick(it); }
-  return { close, refresh: run, list };
+  // Fermer depuis l'extérieur (ex. Entrée) annule aussi les suggestions en attente
+  return { close: () => { clearTimeout(timer); seq++; loading = false; close(); }, refresh: run, list };
 }
 
 /**
